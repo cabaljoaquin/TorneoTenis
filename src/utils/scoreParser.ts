@@ -35,20 +35,42 @@ export function parseTennisScore(input: string): any[] {
       const p1 = parseInt(str[i], 10)
       const p2 = parseInt(str[i + 1], 10)
 
-      // Heurística de Tie-Break:
+      // Heurística de Tie-Break
       const lastSet = sets[sets.length - 1]
       const wasTiebreak = lastSet && ((lastSet.p1 === 7 && lastSet.p2 === 6) || (lastSet.p1 === 6 && lastSet.p2 === 7))
       
       if (wasTiebreak && lastSet.tb1 === undefined && lastSet.tb2 === undefined) {
-         // Validamos si el (p1, p2) podría representar un tiebreak válido.
-         // Un tiebreak estándar de 7 puntos se gana llegando a 7, o más si hay diferencia de 2.
-         // Para máxima flexibilidad deportiva y compatibilidad con errores de carga, 
-         // si tenemos un 76 previo, asumimos que los próximos dos dígitos CASI SIEMPRE son su score de tiebreak.
+         // Intentamos leer un tiebreak > 9 (ej: 108, 119, 1210)
+         if (remaining.length >= 3 && (remaining.startsWith('10') || remaining.startsWith('11') || remaining.startsWith('12') || remaining.startsWith('13') || remaining.startsWith('14'))) {
+           const tbStr = remaining
+           // Si arranca con dos digítos y el tercero es de un digito (ej 108 -> 10 y 8)
+           if (tbStr.length >= 3 && (parseInt(tbStr.substring(0, 2)) - parseInt(tbStr.substring(2, 3)) === 2)) {
+             lastSet.tb1 = parseInt(tbStr.substring(0, 2))
+             lastSet.tb2 = parseInt(tbStr.substring(2, 3))
+             i += 3
+             continue
+           }
+           // Si el primero es 1 digito y el segundo son dos digitos (ej 810 -> 8 y 10)
+           if (tbStr.length >= 3 && (parseInt(tbStr.substring(1, 3)) - parseInt(tbStr.substring(0, 1)) === 2)) {
+             lastSet.tb1 = parseInt(tbStr.substring(0, 1))
+             lastSet.tb2 = parseInt(tbStr.substring(1, 3))
+             i += 3
+             continue
+           }
+           // Si ambos son de dos digitos (ej 1210 -> 12 y 10, o 1012)
+           if (tbStr.length >= 4 && Math.abs(parseInt(tbStr.substring(0, 2)) - parseInt(tbStr.substring(2, 4))) === 2) {
+             lastSet.tb1 = parseInt(tbStr.substring(0, 2))
+             lastSet.tb2 = parseInt(tbStr.substring(2, 4))
+             i += 4
+             continue
+           }
+         }
+
          const isTiebreakScore = 
             (p1 === 7 && p2 <= 5) || 
             (p2 === 7 && p1 <= 5) || 
             (p1 >= 6 && p2 >= 6 && Math.abs(p1 - p2) === 2) ||
-            (p1 >= 8 || p2 >= 8) // ej 8-6, 10-8
+            (p1 >= 8 || p2 >= 8)
             
          if (isTiebreakScore) {
            lastSet.tb1 = p1
