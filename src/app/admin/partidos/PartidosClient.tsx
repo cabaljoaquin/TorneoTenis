@@ -24,6 +24,7 @@ export default function PartidosClient({ userId }: Props) {
   const supabase = createClient()
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [torneos, setTorneos] = useState<{id: string, nombre: string}[]>([])
   const [torneosIds, setTorneosIds] = useState<string[]>([])
 
   const [selectedWinners, setSelectedWinners] = useState<Record<string, string>>({})
@@ -33,6 +34,7 @@ export default function PartidosClient({ userId }: Props) {
   const [categories, setCategories] = useState<{id: string, nombre: string}[]>([])
   const [filterCat, setFilterCat] = useState<string>('all')
   const [filterFase, setFilterFase] = useState<string>('all')
+  const [filterTorneo, setFilterTorneo] = useState<string>('all')
 
   // Cargamos los IDs de torneos del admin actual al montar
   useEffect(() => {
@@ -40,9 +42,12 @@ export default function PartidosClient({ userId }: Props) {
     async function loadTorneos() {
       const { data } = await supabase
         .from('torneos')
-        .select('id')
+        .select('id, nombre')
         .eq('admin_id', userId)
-      setTorneosIds(data?.map(t => t.id) ?? [])
+        .neq('estado', 'Finalizado')
+      const items = data ?? []
+      setTorneos(items)
+      setTorneosIds(items.map(t => t.id))
     }
     async function loadCategories() {
       const { data } = await supabase.from('categorias').select('id, nombre').order('nombre')
@@ -71,8 +76,8 @@ export default function PartidosClient({ userId }: Props) {
         p1:participantes!participante_1_id(id, nombre_mostrado),
         p2:participantes!participante_2_id(id, nombre_mostrado)
       `)
-      // Filtramos solo partidos que pertenecen a torneos de este admin
-      .in('torneo_id', torneosIds)
+      // Filtramos solo partidos de torneos activos de este admin
+      .in('torneo_id', filterTorneo !== 'all' ? [filterTorneo] : torneosIds)
 
     if (tab === 'pendientes') {
       query = query.eq('estado', 'pendiente').order('fecha_hora', { ascending: true })
@@ -114,7 +119,7 @@ export default function PartidosClient({ userId }: Props) {
   useEffect(() => {
     // Solo ejecutamos cuando torneosIds esté cargado (incluso si es array vacío)
     fetchMatches()
-  }, [tab, filterCat, filterFase, torneosIds])
+  }, [tab, filterCat, filterFase, filterTorneo, torneosIds])
 
   const handleWinnerSelect = (matchId: string, participantId: string) => {
     setSelectedWinners(prev => ({ ...prev, [matchId]: participantId }))
@@ -165,6 +170,10 @@ export default function PartidosClient({ userId }: Props) {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <select value={filterTorneo} onChange={e => setFilterTorneo(e.target.value)} className="select-field">
+          <option value="all">Todos los Torneos</option>
+          {torneos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+        </select>
         <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field">
           <option value="all">Todas las Categorías</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
