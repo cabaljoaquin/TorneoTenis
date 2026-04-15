@@ -1,0 +1,410 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+import {
+  Trophy, Plus, Calendar, MapPin, Loader2, CheckCircle2, Circle,
+  Pencil, Eye, EyeOff, X, Save, CheckCheck
+} from 'lucide-react'
+
+interface Torneo {
+  id: string
+  nombre: string
+  estado: string
+  modalidad: string | null
+  visible: boolean
+  created_at: string
+  fecha_inicio: string | null
+  sede_id: string | null
+  admin_id: string
+  sedes?: { nombre: string } | null
+}
+
+interface Props {
+  torneos: Torneo[]
+  userId: string
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+type ToastType = 'success' | 'error'
+interface Toast { id: number; msg: string; type: ToastType }
+
+function useToast() {
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const push = useCallback((msg: string, type: ToastType = 'success') => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, msg, type }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
+  }, [])
+  return { toasts, push }
+}
+
+function ToastContainer({ toasts }: { toasts: Toast[] }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold shadow-xl animate-slide-in border ${
+            t.type === 'success'
+              ? 'bg-brand-600/90 border-brand-500/50 text-white'
+              : 'bg-red-600/90 border-red-500/50 text-white'
+          }`}
+        >
+          {t.type === 'success' ? <CheckCheck size={15} /> : <X size={15} />}
+          {t.msg}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+export default function TorneosClient({ torneos: initialTorneos, userId }: Props) {
+  const supabase = createClient()
+  const router   = useRouter()
+  const { toasts, push } = useToast()
+
+  const [torneos, setTorneos] = useState<Torneo[]>(initialTorneos)
+
+  // Sync when server re-renders
+  useEffect(() => { setTorneos(initialTorneos) }, [initialTorneos])
+
+  // ── Crear torneo ──
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [sedes, setSedes]       = useState<any[]>([])
+  const [sedeId, setSedeId]     = useState('')
+  const [nombre, setNombre]     = useState('')
+  const [modalidad, setModalidad] = useState('single')
+  const [creating, setCreating] = useState(false)
+  const [loadingSedes, setLoadingSedes] = useState(false)
+
+  const openCreateModal = async () => {
+    setShowCreateModal(true)
+    if (sedes.length === 0) {
+      setLoadingSedes(true)
+      const { data } = await supabase.from('sedes').select('id, nombre')
+      if (data) { setSedes(data); if (data.length > 0) setSedeId(data[0].id) }
+      setLoadingSedes(false)
+    }
+  }
+
+  const handleCrear = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!nombre.trim() || !userId) return
+    setCreating(true)
+    const { error } = await supabase.from('torneos').insert({
+      nombre, sede_id: sedeId || null, estado: 'En curso',
+      admin_id: userId, modalidad, visible: true,
+    })
+    if (!error) {
+      setNombre(''); setShowCreateModal(false)
+      push('Torneo creado con éxito')
+      router.refresh()
+    } else {
+      push('Error al crear el torneo', 'error')
+    }
+    setCreating(false)
+  }
+
+  // ── Editar torneo ──
+  const [editTorneo, setEditTorneo] = useState<Torneo | null>(null)
+  const [editNombre, setEditNombre]     = useState('')
+  const [editModalidad, setEditModalidad] = useState('single')
+  const [editSedeId, setEditSedeId]     = useState('')
+  const [editFecha, setEditFecha]       = useState('')
+  const [saving, setSaving]             = useState(false)
+
+  const openEdit = async (t: Torneo) => {
+    setEditTorneo(t)
+    setEditNombre(t.nombre)
+    setEditModalidad(t.modalidad ?? 'single')
+    setEditSedeId(t.sede_id ?? '')
+    setEditFecha(t.fecha_inicio ?? '')
+    if (sedes.length === 0) {
+      const { data } = await supabase.from('sedes').select('id, nombre')
+      if (data) setSedes(data)
+    }
+  }
+
+  const handleGuardar = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editTorneo || !editNombre.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('torneos').update({
+      nombre: editNombre,
+      modalidad: editModalidad,
+      sede_id: editSedeId || null,
+      fecha_inicio: editFecha || null,
+    }).eq('id', editTorneo.id)
+
+    if (!error) {
+      setTorneos(prev => prev.map(t =>
+        t.id === editTorneo.id
+          ? { ...t, nombre: editNombre, modalidad: editModalidad, sede_id: editSedeId || null, fecha_inicio: editFecha || null }
+          : t
+      ))
+      push('Cambios guardados')
+      setEditTorneo(null)
+      router.refresh()
+    } else {
+      push('Error al guardar', 'error')
+    }
+    setSaving(false)
+  }
+
+  // ── Toggle estado (En curso / Finalizado) ──
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const toggleEstado = async (id: string, currentEstado: string) => {
+    setTogglingId(id)
+    const nuevoEstado = currentEstado === 'En curso' ? 'Finalizado' : 'En curso'
+    const { error } = await supabase.from('torneos').update({ estado: nuevoEstado }).eq('id', id)
+    if (!error) {
+      setTorneos(prev => prev.map(t => t.id === id ? { ...t, estado: nuevoEstado } : t))
+    }
+    setTogglingId(null)
+    router.refresh()
+  }
+
+  // ── Toggle visibilidad ──
+  const [togglingVisId, setTogglingVisId] = useState<string | null>(null)
+  const toggleVisible = async (id: string, currentVisible: boolean) => {
+    setTogglingVisId(id)
+    const nuevoVisible = !currentVisible
+    const { error } = await supabase.from('torneos').update({ visible: nuevoVisible }).eq('id', id)
+    if (!error) {
+      setTorneos(prev => prev.map(t => t.id === id ? { ...t, visible: nuevoVisible } : t))
+      push(nuevoVisible ? 'Torneo publicado' : 'Torneo ocultado del público')
+    } else {
+      push('Error al cambiar visibilidad', 'error')
+    }
+    setTogglingVisId(null)
+  }
+
+  return (
+    <>
+      <ToastContainer toasts={toasts} />
+
+      <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-extrabold text-slate-100 italic tracking-tight">Mis Torneos</h2>
+            <p className="text-sm text-slate-500 mt-1">Historial y gestión de todas tus competiciones.</p>
+          </div>
+          <button onClick={openCreateModal} className="btn-primary">
+            <Plus size={18} />
+            <span>Nuevo Torneo</span>
+          </button>
+        </div>
+
+        {/* Lista */}
+        <div className="grid gap-4">
+          {torneos.map((t) => (
+            <div
+              key={t.id}
+              className="bg-surface-card border border-surface-border rounded-2xl p-5 flex items-center justify-between gap-4 group hover:border-brand-500/30 transition-all shadow-sm"
+            >
+              {/* Icono + Info */}
+              <div className="flex items-center gap-4 min-w-0">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${t.estado === 'En curso' ? 'bg-brand-500/10 text-brand-400' : 'bg-slate-800 text-slate-600'}`}>
+                  <Trophy size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-100 text-lg truncate">{t.nombre}</h3>
+                    {!t.visible && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-400 border border-slate-600/40 shrink-0">
+                        Oculto
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin size={12} />
+                      {t.sedes?.nombre || 'Sin sede'}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Calendar size={12} />
+                      {t.fecha_inicio
+                        ? new Date(t.fecha_inicio.slice(0, 10) + 'T12:00:00').toLocaleDateString('es-AR')
+                        : 'Sin fecha'}
+                    </span>
+                    <span className="capitalize opacity-70">{t.modalidad ?? 'single'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Visibilidad */}
+                <button
+                  onClick={() => toggleVisible(t.id, t.visible)}
+                  disabled={togglingVisId === t.id}
+                  title={t.visible ? 'Ocultar del público' : 'Publicar'}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border disabled:opacity-50 ${
+                    t.visible
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20'
+                      : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                  }`}
+                >
+                  {togglingVisId === t.id
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : t.visible ? <Eye size={13} /> : <EyeOff size={13} />
+                  }
+                  <span className="hidden sm:inline">{t.visible ? 'Público' : 'Oculto'}</span>
+                </button>
+
+                {/* Estado */}
+                <button
+                  onClick={() => toggleEstado(t.id, t.estado)}
+                  disabled={togglingId === t.id}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition-all border disabled:opacity-50 ${
+                    t.estado === 'En curso'
+                      ? 'bg-brand-500/10 text-brand-400 border-brand-500/20 hover:bg-brand-500/20'
+                      : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                  }`}
+                >
+                  {togglingId === t.id
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : t.estado === 'En curso' ? <CheckCircle2 size={13} /> : <Circle size={13} />
+                  }
+                  <span className="hidden sm:inline">{t.estado}</span>
+                </button>
+
+                {/* Editar */}
+                <button
+                  onClick={() => openEdit(t)}
+                  className="p-2 rounded-lg text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 border border-transparent hover:border-brand-500/20 transition-all"
+                  title="Editar torneo"
+                >
+                  <Pencil size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {torneos.length === 0 && (
+            <div className="text-center py-20 border-2 border-dashed border-surface-border rounded-3xl">
+              <Trophy size={48} className="mx-auto text-slate-700 mb-4" />
+              <p className="text-slate-400">No tenés torneos registrados todavía.</p>
+              <button onClick={openCreateModal} className="text-brand-400 font-semibold mt-2 hover:underline">
+                Crear el primero ahora
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Modal CREAR ─────────────────────────────────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
+          <div className="relative bg-surface border border-surface-border w-full max-w-md rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-100 mb-5">Iniciar Nuevo Torneo</h3>
+            <form onSubmit={handleCrear} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Nombre del Evento</label>
+                <input type="text" autoFocus placeholder="Ej: Copa de Verano 2025"
+                  className="input-field" value={nombre} onChange={e => setNombre(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Modalidad</label>
+                <div className="flex gap-4 p-1">
+                  {['single', 'doble'].map(m => (
+                    <label key={m} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="modalidad-crear" value={m}
+                        checked={modalidad === m} onChange={e => setModalidad(e.target.value)}
+                        className="w-4 h-4" />
+                      <span className="text-sm font-semibold text-slate-300 capitalize">{m}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {loadingSedes ? (
+                <div className="flex justify-center py-2"><Loader2 className="animate-spin text-brand-500" size={18} /></div>
+              ) : (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Sede Principal</label>
+                  <select className="input-field appearance-none bg-surface" value={sedeId} onChange={e => setSedeId(e.target.value)}>
+                    <option value="">Seleccionar sede...</option>
+                    {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setShowCreateModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-surface-border text-slate-400 hover:bg-white/5 transition-colors">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={creating || !nombre.trim()} className="flex-1 btn-primary">
+                  {creating ? <Loader2 className="animate-spin" size={18} /> : 'Crear Torneo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal EDITAR ─────────────────────────────────────────────────── */}
+      {editTorneo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setEditTorneo(null)} />
+          <div className="relative bg-surface border border-surface-border w-full max-w-md rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-xl font-bold text-slate-100">Editar Torneo</h3>
+              <button onClick={() => setEditTorneo(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleGuardar} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Nombre del Evento</label>
+                <input type="text" autoFocus className="input-field"
+                  value={editNombre} onChange={e => setEditNombre(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Modalidad</label>
+                <div className="flex gap-4 p-1">
+                  {['single', 'doble'].map(m => (
+                    <label key={m} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="modalidad-editar" value={m}
+                        checked={editModalidad === m} onChange={e => setEditModalidad(e.target.value)}
+                        className="w-4 h-4" />
+                      <span className="text-sm font-semibold text-slate-300 capitalize">{m}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Fecha de Inicio</label>
+                <input type="date" className="input-field"
+                  value={editFecha ? editFecha.slice(0, 10) : ''}
+                  onChange={e => setEditFecha(e.target.value)} />
+              </div>
+              {sedes.length > 0 && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Sede Principal</label>
+                  <select className="input-field appearance-none bg-surface" value={editSedeId} onChange={e => setEditSedeId(e.target.value)}>
+                    <option value="">Sin sede</option>
+                    {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setEditTorneo(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-surface-border text-slate-400 hover:bg-white/5 transition-colors">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={saving || !editNombre.trim()} className="flex-1 btn-primary">
+                  {saving ? <Loader2 className="animate-spin" size={18} /> : <><Save size={15} /> Guardar Cambios</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
