@@ -55,10 +55,8 @@ export default async function PublicHomePage() {
           </h2>
           <div className="w-12 h-0.5 bg-brand-500 mt-3 rounded-full" />
         </div>
-
-        <TorneosGrid torneos={torneosSorted} />
+        <TorneosGrid torneos={torneosSorted as any} />
       </section>
-
     </main>
   )
 }

@@ -23,7 +23,7 @@ export default async function TorneoPublicPage(props: { params: Promise<{ id: st
         <h1 className="text-xl font-bold text-white tracking-widest uppercase">
           {torneo?.nombre || 'Torneo'}
         </h1>
-        <p className="text-xs text-slate-400 mt-1">Sede: {torneo?.sedes?.nombre || 'General'}</p>
+        <p className="text-xs text-slate-400 mt-1">Sede: {(torneo?.sedes as any)?.nombre || 'General'}</p>
       </header>
 
       <div className="flex-1 overflow-x-hidden">

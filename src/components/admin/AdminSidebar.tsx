@@ -10,6 +10,7 @@ import {
   LogOut,
   Network,
   Trophy,
+  GitBranch,
   ChevronRight,
   Loader2,
   X,
@@ -22,6 +23,7 @@ const ALL_NAV_ITEMS = [
   { label: 'Mis Torneos',    href: '/admin/torneos',        icon: Trophy,          requiresTorneos: false },
   { label: 'Inscripciones',  href: '/admin/inscripciones',  icon: Users,           requiresTorneos: false },
   { label: 'Cuadros',        href: '/admin/cuadros',        icon: Network,         requiresTorneos: false },
+  { label: 'Playoffs',       href: '/admin/playoffs',       icon: GitBranch,       requiresTorneos: false },
   { label: 'Partidos',       href: '/admin/partidos',       icon: ListChecks,      requiresTorneos: false },
   { label: 'Configuración',  href: '/admin/configuracion',  icon: Settings,        requiresTorneos: false },
 ]

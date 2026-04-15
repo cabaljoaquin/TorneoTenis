@@ -6,115 +6,66 @@ import TournamentBracket from '@/components/public/TournamentBracket'
 import { useParams, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { calculateStandings } from '@/utils/standingsCalculator'
 import { Loader2, Activity, Calendar, Trophy, ChevronRight } from 'lucide-react'
 
 // Utilidad para ordenar jerárquicamente las fases
 const FASES_ORDER = ['32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final']
 
-function buildBracket(partidos: any[]): any[] {
-  if (!partidos || partidos.length === 0) return []
-  
-  // Filtrar solo eliminatorias eliminando 'Fase de Grupos'
-  const eliminatorios = partidos.filter(p => p.fase_bracket && p.fase_bracket !== 'Fase de Grupos')
-  
-  // Agrupar por fase
-  const roundsMap: Record<string, any[]> = {}
-  eliminatorios.forEach(p => {
-    if (!roundsMap[p.fase_bracket]) roundsMap[p.fase_bracket] = []
-    roundsMap[p.fase_bracket].push({
-      id: p.id,
-      p1: p.p1?.nombre_mostrado || 'A definir',
-      p2: p.p2?.nombre_mostrado || 'A definir',
-      scoreStr: p.estado === 'finalizado' ? formatResultStr(p) : undefined,
-      scoreList: p.estado === 'finalizado' ? formatResultArray(p) : [],
-      p1Wins: p.estado === 'finalizado' && p.ganador_id === p.p1?.id,
-      p2Wins: p.estado === 'finalizado' && p.ganador_id === p.p2?.id,
-      finished: p.estado === 'finalizado'
-    })
-  })
+function buildBracket(partidos: any[], configLlave?: any[]): any[] {
+  const eliminatorios = partidos.filter((p) => p.fase_bracket && p.fase_bracket !== 'Fase de Grupos')
 
-  // Ordenar columnas según flujo de torneo
-  return Object.keys(roundsMap)
-    .sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
-    .map(fase => ({
-      title: fase,
-      matches: roundsMap[fase]
-    }))
-}
-
-function calculateStandings(zona: any, partidos: any[]) {
-  // Inicializamos tabla con 0 para todos los miembros de la zona
-  const stats: Record<string, any> = {}
-  
-  zona.participantes_zonas?.forEach((pz: any) => {
-    const pid = pz.participantes?.id
-    if (!pid) return
-    stats[pid] = {
-      id: pid,
-      nombre: pz.participantes.nombre_mostrado,
-      pj: 0, pg: 0, pp: 0, sf: 0, sc: 0, ds: 0, puntos: 0
-    }
-  })
-
-  // Procesamos partidos finalizados
-  partidos.forEach(p => {
-    if (p.estado !== 'finalizado' || !p.ganador_id) return
-    
-    const p1id = p.p1?.id
-    const p2id = p.p2?.id
-    
-    if (stats[p1id]) stats[p1id].pj += 1
-    if (stats[p2id]) stats[p2id].pj += 1
-
-    // Ganador y perdedor
-    const winnerId = p.ganador_id
-    const loserId = winnerId === p1id ? p2id : p1id
-
-    if (stats[winnerId]) {
-      stats[winnerId].pg += 1
-      stats[winnerId].puntos += 1 // REGLA: 1 punto por victoria
-    }
-    if (stats[loserId]) {
-      stats[loserId].pp += 1
-    }
-
-    // Calculo de Sets (simplificado: asumimos un parseado limpio)
-    // p.resultado ej: [{p1:6, p2:4}, {p1:6, p2:2}]
-    if (p.resultado && Array.isArray(p.resultado)) {
-      let s1 = 0; let s2 = 0;
-      p.resultado.forEach((set: any) => {
-        if (set.p1 > set.p2) s1++
-        else if (set.p2 > set.p1) s2++
+  if (eliminatorios.length > 0) {
+    // Hay partidos reales: mostrar nombres reales
+    const roundsMap: Record<string, any[]> = {}
+    eliminatorios.forEach((p) => {
+      if (!roundsMap[p.fase_bracket]) roundsMap[p.fase_bracket] = []
+      roundsMap[p.fase_bracket].push({
+        id: p.id,
+        bracket_index: p.bracket_index || 0,
+        p1: p.p1?.nombre_mostrado || 'Esperando ganador...',
+        p2: p.p2?.nombre_mostrado || 'Esperando ganador...',
+        isP1Waiting: !p.p1,
+        isP2Waiting: !p.p2,
+        scoreStr: p.estado === 'finalizado' ? formatResultStr(p) : undefined,
+        scoreList: p.estado === 'finalizado' ? formatResultArray(p) : [],
+        p1Wins: p.estado === 'finalizado' && p.ganador_id === p.p1?.id,
+        p2Wins: p.estado === 'finalizado' && p.ganador_id === p.p2?.id,
+        finished: p.estado === 'finalizado',
+        isPlaceholder: false,
       })
-      
-      // Auto-corregir si tipeó el score al revés (el ganador siempre debería tener más sets)
-      if ((winnerId === p2id && s1 > s2) || (winnerId === p1id && s2 > s1)) {
-        const temp = s1; s1 = s2; s2 = temp;
-      }
-      
-      if (stats[p1id]) {
-        stats[p1id].sf += s1
-        stats[p1id].sc += s2
-      }
-      if (stats[p2id]) {
-        stats[p2id].sf += s2
-        stats[p2id].sc += s1
-      }
-    }
-  })
+    })
+    
+    // Sort matches in each round by bracket_index automatically created during generation
+    Object.keys(roundsMap).forEach(fase => {
+      roundsMap[fase].sort((a, b) => a.bracket_index - b.bracket_index)
+    })
 
-  // Set Diference
-  Object.values(stats).forEach(s => {
-    s.ds = s.sf - s.sc
-  })
+    return Object.keys(roundsMap)
+      .sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
+      .map((fase) => ({ title: fase, matches: roundsMap[fase] }))
+  }
 
-  // Ordenar: 1. Puntos, 2. Diferencia de Sets, 3. Partidos Jugados
-  return Object.values(stats).sort((a, b) => {
-    if (b.puntos !== a.puntos) return b.puntos - a.puntos
-    if (b.ds !== a.ds) return b.ds - a.ds
-    return b.pj - a.pj
-  })
+  // Sin partidos reales: mostrar bracket teórico desde configuracion_llave
+  if (configLlave && configLlave.length > 0) {
+    const roundsMap: Record<string, any[]> = {}
+    configLlave.forEach((cfg) => {
+      if (!roundsMap[cfg.fase]) roundsMap[cfg.fase] = []
+      roundsMap[cfg.fase][cfg.match_index] = {
+        id: `cfg-${cfg.id}`,
+        p1: cfg.origen_p1,
+        p2: cfg.origen_p2,
+        isPlaceholder: true,
+      }
+    })
+    return Object.keys(roundsMap)
+      .sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
+      .map((fase) => ({ title: fase, matches: (roundsMap[fase] || []).filter(Boolean) }))
+  }
+
+  return []
 }
+
 
 // Utilidad para mostrar el score correctamente alineado P1 vs P2, 
 // revirtiendo el string si el profe lo tipeó desde la perspectiva del ganador pero el ganador era P2
@@ -179,6 +130,7 @@ function TorneoContent() {
   const [zonas, setZonas] = useState<any[]>([])
   const [matches, setMatches] = useState<any[]>([])
   const [recentMatches, setRecentMatches] = useState<any[]>([])
+  const [configLlave, setConfigLlave] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const currentCatId = searchParams.get('cat') || categories[0]?.id
@@ -202,7 +154,7 @@ function TorneoContent() {
         .eq('torneo_id', torneoId)
         .eq('estado', 'finalizado')
         .not('resultado', 'is', null)
-        .order('fecha_hora', { ascending: false })
+        .order('updated_at', { ascending: false, nullsFirst: false })
         .limit(5)
       
       if (rMatches) setRecentMatches(rMatches)
@@ -228,11 +180,19 @@ function TorneoContent() {
       const { data: ms } = await supabase
         .from('partidos')
         .select(`
-          id, estado, resultado, zona_id, fase_bracket, fecha_hora, ganador_id, categoria_id,
+          id, estado, resultado, zona_id, fase_bracket, bracket_index, fecha_hora, ganador_id, categoria_id,
           p1:participantes!participante_1_id(id, nombre_mostrado),
           p2:participantes!participante_2_id(id, nombre_mostrado)
         `)
         .eq('torneo_id', torneoId)
+
+      const { data: cfgLlave } = await supabase
+        .from('configuracion_llave')
+        .select('*')
+        .eq('torneo_id', torneoId)
+        .eq('categoria_id', currentCatId)
+        .order('fase')
+        .order('match_index')
       
       const validZoneIds = zs ? zs.map(z => z.id) : []
       const filteredMs = (ms || []).filter(m => {
@@ -241,14 +201,15 @@ function TorneoContent() {
 
       if (zs) setZonas(zs)
       if (filteredMs) setMatches(filteredMs)
+      setConfigLlave(cfgLlave || [])
       
       setLoading(false)
     }
     loadCategoryData()
   }, [currentCatId, torneoId])
 
-  const roundData = buildBracket(matches)
-  const zonaMatchesLookup = matches.filter(m => m.zona_id && (!m.fase_bracket || m.fase_bracket === 'Fase de Grupos')) // Partidos de grupos excluyendo eliminatorias
+  const roundData = buildBracket(matches, configLlave)
+  const zonaMatchesLookup = matches.filter(m => m.zona_id && (!m.fase_bracket || m.fase_bracket === 'Fase de Grupos'))
 
   if (categories.length === 0) {
     return <div className="h-40 flex items-center justify-center text-slate-500"><Loader2 className="animate-spin mr-2" /> Cargando torneo...</div>
@@ -272,25 +233,26 @@ function TorneoContent() {
                 const isP2Winner = m.ganador_id === m.p2?.id
                 return (
                   <div key={m.id} className="flex shrink-0">
-                    <div className="flex flex-col min-w-fit px-5 py-1">
-                      {/* P1 row */}
-                      <div className={`flex items-center gap-3 ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
-                        <span className="text-sm min-w-[100px]">{m.p1?.nombre_mostrado} {isP1Winner && '🏆'}</span>
-                        <div className="flex gap-3 font-mono text-sm">
-                          {sets.map((s, i) => <span key={i}>{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px]">{s.tb1}</sup> : ''}</span>)}
+                    <div className="flex flex-col min-w-fit px-4 py-1 justify-center">
+                      <div className="grid grid-cols-[140px_auto] sm:grid-cols-[170px_auto] gap-x-4 gap-y-1.5 items-center">
+                        <div className={`text-sm truncate ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`} title={m.p1?.nombre_mostrado}>
+                          {m.p1?.nombre_mostrado} {isP1Winner && '🏆'}
+                        </div>
+                        <div className={`flex gap-2.5 font-mono text-sm ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
+                          {sets.map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb1}</sup> : ''}</span>)}
+                        </div>
+                        
+                        <div className={`text-sm truncate ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`} title={m.p2?.nombre_mostrado}>
+                          {m.p2?.nombre_mostrado} {isP2Winner && '🏆'}
+                        </div>
+                        <div className={`flex gap-2.5 font-mono text-sm ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
+                          {sets.map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s2}{s.tb2 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb2}</sup> : ''}</span>)}
                         </div>
                       </div>
-                      {/* P2 row */}
-                      <div className={`flex items-center gap-3 ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
-                        <span className="text-sm min-w-[100px]">{m.p2?.nombre_mostrado} {isP2Winner && '🏆'}</span>
-                        <div className="flex gap-3 font-mono text-sm">
-                          {sets.map((s, i) => <span key={i}>{s.s2}{s.tb2 !== undefined ? <sup className="text-[9px]">{s.tb2}</sup> : ''}</span>)}
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-slate-600 font-semibold mt-1">{m.categorias?.nombre}</span>
+                      <span className="text-[10px] text-slate-600 font-semibold mt-2">{m.categorias?.nombre}</span>
                     </div>
                     {idx < recentMatches.length - 1 && (
-                      <div className="w-px self-stretch my-1 bg-gradient-to-b from-transparent via-slate-600/60 to-transparent" />
+                      <div className="w-px self-stretch my-2 mx-1 bg-gradient-to-b from-transparent via-surface-border to-transparent" />
                     )}
                   </div>
                 )
@@ -323,7 +285,19 @@ function TorneoContent() {
               
               {/* VISTA DE ELIMINATORIAS */}
               {fase === 'eliminatorias' && (
-                roundData.length > 0 ? <TournamentBracket rounds={roundData} /> : <div className="text-slate-500 mt-10">Todavía no hay llaves generadas para esta categoría.</div>
+                roundData.length > 0
+                  ? (
+                    <div className="w-full">
+                      {configLlave.length > 0 && !matches.some(m => m.fase_bracket && m.fase_bracket !== 'Fase de Grupos') && (
+                        <div className="flex items-center gap-2 mb-4 px-1 text-xs text-amber-500/80">
+                          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500/30 border border-amber-500/50" />
+                          Los cruces son preliminares. Los nombres reales se asignarán al finalizar todas las zonas.
+                        </div>
+                      )}
+                      <TournamentBracket rounds={roundData} />
+                    </div>
+                  )
+                  : <div className="text-slate-500 mt-10">Todavía no hay llaves configuradas para esta categoría.</div>
               )}
 
               {/* VISTA DE ZONAS */}
@@ -332,7 +306,7 @@ function TorneoContent() {
                   <div className="w-full grid md:grid-cols-2 gap-8">
                     {zonas.map(z => {
                       const zMatches = zonaMatchesLookup.filter(m => m.zona_id === z.id)
-                      const standings = calculateStandings(z, zMatches)
+                      const standings = calculateStandings(z.participantes_zonas || [], zMatches)
                       
                       return (
                         <div key={z.id} className="bg-surface-card border border-surface-border rounded-xl shadow-lg overflow-hidden flex flex-col">
