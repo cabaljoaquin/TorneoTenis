@@ -88,7 +88,7 @@ export default function PartidosClient({ userId }: Props) {
       // Ordenamos primero por fase de grupos para que se jueguen primero, y luego eliminatorias, y fecha
       query = query.eq('estado', 'pendiente').order('fecha_hora', { ascending: true, nullsFirst: false }).order('id')
     } else {
-      query = query.eq('estado', 'finalizado').order('updated_at', { ascending: false, nullsLast: true }).order('fecha_hora', { ascending: false }).limit(30)
+      query = query.eq('estado', 'finalizado').order('updated_at', { ascending: false, nullsFirst: false }).order('fecha_hora', { ascending: false }).limit(30)
     }
 
     if (filterCat !== 'all') query = query.eq('categoria_id', filterCat)

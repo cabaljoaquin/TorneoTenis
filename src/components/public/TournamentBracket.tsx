@@ -14,6 +14,8 @@ interface Match {
   isPlaceholder?: boolean
   isP1Waiting?: boolean
   isP2Waiting?: boolean
+  isHidden?: boolean
+  bracket_index?: number
 }
 
 interface Round {
