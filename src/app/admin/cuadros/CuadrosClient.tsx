@@ -130,34 +130,39 @@ export default function CuadrosWorkspace({ userId }: Props) {
 
   const handleAssignToZone = async (zonaId: string, participante: any) => {
     const pId = participante.participantes.id
-    // Update local state optimisticly for immediate feedback
-    setParticipantesZonificados(prev => [...prev, { id: 'temp-'+Date.now(), zona_id: zonaId, participante_id: pId }])
+    // Optimistic: move player immediately from available to zone
+    const tempId = 'temp-' + Date.now()
+    setParticipantesZonificados(prev => [...prev, { id: tempId, zona_id: zonaId, participante_id: pId }])
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('participantes_zonas')
       .insert({ zona_id: zonaId, participante_id: pId })
+      .select('*')
+      .single()
 
     if (error) {
       alert('Error asignando jugador: ' + error.message)
-      // Rollback on exact error
-      setParticipantesZonificados(prev => prev.filter(pz => !(pz.zona_id === zonaId && pz.participante_id === pId)))
+      // Rollback
+      setParticipantesZonificados(prev => prev.filter(pz => pz.id !== tempId))
+    } else if (data) {
+      // Replace temp entry with real server entry
+      setParticipantesZonificados(prev => prev.map(pz => pz.id === tempId ? data : pz))
     }
-    // Silent background sync
-    loadWorkspace(torneoActivo, categoriaActiva, false)
   }
 
   const handleRemoveFromZone = async (zonaId: string, participanteId: string) => {
-    // Optimistic removal
+    // Optimistic removal — instant UI feedback
     setParticipantesZonificados(prev => prev.filter(pz => !(pz.zona_id === zonaId && pz.participante_id === participanteId)))
-    setPartidosZona(prev => prev.filter(p => p.zona_id !== zonaId)) // Clear visually the matches, will sync shortly
+    setPartidosZona(prev => prev.filter(p =>
+      !(p.zona_id === zonaId && (p.p1_id === participanteId || p.p2_id === participanteId))
+    ))
 
     await supabase.from('partidos').delete()
       .eq('zona_id', zonaId)
       .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`)
     const { error } = await supabase.from('participantes_zonas').delete().match({ zona_id: zonaId, participante_id: participanteId })
-    
+
     if (error) alert('Error quitando jugador: ' + error.message)
-    loadWorkspace(torneoActivo, categoriaActiva, false)
   }
 
   const handleCreateMatch = async () => {
@@ -184,8 +189,9 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
     setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
     setIsModalOpen(false)
-    loadWorkspace(torneoActivo, categoriaActiva, false)
     setIsSavingMatch(false)
+    // Reload to get fresh partido data with participant names
+    loadWorkspace(torneoActivo, categoriaActiva, false)
   }
 
   const handleRemoveMatch = async (matchId: string) => {

@@ -11,28 +11,28 @@ interface Props {
 
 export default function InscripcionesClient({ userId }: Props) {
   const supabase = createClient()
-  
+
   const [torneos, setTorneos] = useState<any[]>([])
   const [categorias, setCategorias] = useState<any[]>([])
   const [torneoActivoId, setTorneoActivoId] = useState<string>('')
-  
+
   const [inscriptos, setInscriptos] = useState<any[]>([])
   const [loadingList, setLoadingList] = useState(false)
 
   const [categoriaId, setCategoriaId] = useState<string>('')
-  
+
   const [searchQuery, setSearchQuery] = useState('')
   const [participantesDb, setParticipantesDb] = useState<any[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
-  
+
   const [selectedParticipante, setSelectedParticipante] = useState<any>(null)
-  
+
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [nuevoApellido, setNuevoApellido] = useState('')
   const [nuevoApellido2, setNuevoApellido2] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [formMsg, setFormMsg] = useState<{type: 'success'|'error', text: string} | null>(null)
+  const [formMsg, setFormMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -47,24 +47,17 @@ export default function InscripcionesClient({ userId }: Props) {
         .neq('estado', 'Finalizado')
 
       const { data: resC } = await supabase.from('categorias').select('*')
-      
+
       if (errT) console.error('Error fetching torneos:', errT)
 
       if (resT && resT.length > 0) {
-        const ahora = new Date()
-        const torneosVigentes = resT.filter(t => {
-          if (!t.fecha_inicio) return true
-          const fechaInicioDate = new Date(t.fecha_inicio)
-          fechaInicioDate.setDate(fechaInicioDate.getDate() + 1)
-          return ahora.getTime() < fechaInicioDate.getTime()
-        })
-        torneosVigentes.sort((a, b) => {
+        resT.sort((a, b) => {
           if (!a.fecha_inicio) return -1
           if (!b.fecha_inicio) return 1
           return new Date(b.fecha_inicio).getTime() - new Date(a.fecha_inicio).getTime()
         })
-        setTorneos(torneosVigentes)
-        if (torneosVigentes.length > 0) setTorneoActivoId(torneosVigentes[0].id)
+        setTorneos(resT)
+        if (resT.length > 0) setTorneoActivoId(resT[0].id)
       }
       if (resC) {
         setCategorias(resC)
@@ -101,6 +94,19 @@ export default function InscripcionesClient({ userId }: Props) {
       .order('created_at', { ascending: false })
     if (data) setInscriptos(data)
     setLoadingList(false)
+  }
+
+  const silentRefresh = async (tid: string) => {
+    const { data } = await supabase
+      .from('inscripciones')
+      .select(`
+        id, created_at,
+        participantes!inner(id, nombre, apellido, nombre_mostrado),
+        categorias!inner(id, nombre)
+      `)
+      .eq('torneo_id', tid)
+      .order('created_at', { ascending: false })
+    if (data) setInscriptos(data)
   }
 
   useEffect(() => {
@@ -168,9 +174,13 @@ export default function InscripcionesClient({ userId }: Props) {
       finalParticipanteId = newP.id
     }
 
-    const { error: insError } = await supabase
+    const catActual = categorias.find(c => c.id === categoriaId)
+
+    const { data: insData, error: insError } = await supabase
       .from('inscripciones')
       .insert({ torneo_id: torneoActivoId, participante_id: finalParticipanteId, categoria_id: categoriaId })
+      .select('id, created_at')
+      .single()
 
     if (insError) {
       if (insError.code === '23505') {
@@ -179,28 +189,52 @@ export default function InscripcionesClient({ userId }: Props) {
         setFormMsg({ type: 'error', text: 'Error en inscripción: ' + insError.message })
       }
     } else {
+      // Optimistic update: add immediately to list without flicker
+      const nombreMostrado = selectedParticipante?.nombre_mostrado || (
+        isDoble
+          ? `${nuevoApellido.trim()} - ${nuevoApellido2.trim()}`
+          : nuevoNombre
+            ? `${nuevoNombre.charAt(0).toUpperCase()}. ${nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)}`
+            : nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)
+      )
+      const optimisticEntry = {
+        id: insData.id,
+        created_at: insData.created_at,
+        participantes: {
+          id: finalParticipanteId,
+          nombre: selectedParticipante?.nombre || nuevoNombre || '',
+          apellido: selectedParticipante?.apellido || nuevoApellido || '',
+          nombre_mostrado: nombreMostrado,
+        },
+        categorias: { id: categoriaId, nombre: catActual?.nombre || '' },
+      }
+      setInscriptos(prev => [optimisticEntry, ...prev])
+
       setFormMsg({ type: 'success', text: '¡Jugador inscripto con éxito!' })
       setSelectedParticipante(null)
       setSearchQuery('')
       setNuevoNombre('')
       setNuevoApellido('')
       setNuevoApellido2('')
-      fetchInscriptos(torneoActivoId)
       setTimeout(() => setFormMsg(null), 3500)
+      // Silent background sync to get server-assigned data
+      silentRefresh(torneoActivoId)
     }
     setIsSubmitting(false)
   }
 
   const handleRemoveInscripcion = async (id: string, participanteId: string, nombre: string) => {
     if (!confirm(`¿Seguro querés dar de baja a ${nombre} de este torneo?`)) return
+    // Optimistic remove
+    setInscriptos(prev => prev.filter(i => i.id !== id))
     await supabase.from('partidos').delete()
       .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`)
       .eq('torneo_id', torneoActivoId)
     const { error } = await supabase.from('inscripciones').delete().eq('id', id)
     if (error) {
       alert('Error al dar de baja: ' + error.message)
-    } else {
-      fetchInscriptos(torneoActivoId)
+      // Revert on error
+      silentRefresh(torneoActivoId)
     }
   }
 
@@ -217,11 +251,11 @@ export default function InscripcionesClient({ userId }: Props) {
       </div>
 
       <div className="grid lg:grid-cols-[1fr_1.5fr] gap-8 transform-gpu">
-        
+
         {/* COLUMNA IZQUIERDA: FORMULARIO */}
         <div className="bg-surface-card border border-surface-border rounded-xl p-5 shadow-lg h-fit sticky top-24">
           <h3 className="font-semibold text-brand-400 mb-5 pb-2 border-b border-surface-border/50">Formulario de Fichaje</h3>
-          
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Torneo Activo */}
             <div>
@@ -354,9 +388,29 @@ export default function InscripcionesClient({ userId }: Props) {
 
         {/* COLUMNA DERECHA: GRILLA DE INSCRIPTOS */}
         <div>
-          <div className="flex items-center justify-between mb-4 px-1">
+          <div className="flex items-start justify-between mb-4 px-1 gap-4 flex-wrap">
             <h3 className="font-semibold text-slate-200">Jugadores Registrados</h3>
-            <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2.5 py-1 rounded-full">Total: {inscriptos.length}</span>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {(() => {
+                const catCounts: Record<string, { nombre: string; count: number }> = {}
+                inscriptos.forEach(ins => {
+                  const catId = ins.categorias?.id
+                  const catNombre = ins.categorias?.nombre
+                  if (!catId) return
+                  if (!catCounts[catId]) catCounts[catId] = { nombre: catNombre, count: 0 }
+                  catCounts[catId].count++
+                })
+                return Object.values(catCounts)
+                  .filter(c => c.count > 0)
+                  .sort((a, b) => b.count - a.count)
+                  .map(c => (
+                    <span key={c.nombre} className="text-xs font-semibold text-slate-400 bg-surface-card border border-surface-border px-2.5 py-1 rounded-full">
+                      {c.nombre}: <span className="text-slate-200">{c.count}</span>
+                    </span>
+                  ))
+              })()}
+              <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2.5 py-1 rounded-full">Total: {inscriptos.length}</span>
+            </div>
           </div>
 
           {loadingList ? (
