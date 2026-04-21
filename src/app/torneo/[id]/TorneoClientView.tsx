@@ -26,52 +26,194 @@ function buildBracket(partidos: any[], configLlave?: any[]): any[] {
   const eliminatorios = partidos.filter((p) => p.fase_bracket && p.fase_bracket !== 'Fase de Grupos')
 
   if (eliminatorios.length > 0) {
-    // Hay partidos reales: mostrar nombres reales
-    const roundsMap: Record<string, any[]> = {}
+    // 1. Determine active matches to support asymmetric brackets
+    const activeMatchIds = new Set<string>()
+
+    // Initialize with matches that have participants or are explicitly configured
     eliminatorios.forEach((p) => {
-      if (!roundsMap[p.fase_bracket]) roundsMap[p.fase_bracket] = []
-      roundsMap[p.fase_bracket].push({
-        id: p.id,
-        bracket_index: p.bracket_index || 0,
-        p1: p.p1?.nombre_mostrado || 'Esperando ganador...',
-        p2: p.p2?.nombre_mostrado || 'Esperando ganador...',
-        isP1Waiting: !p.p1,
-        isP2Waiting: !p.p2,
-        scoreStr: p.estado === 'finalizado' ? formatResultStr(p) : undefined,
-        scoreList: p.estado === 'finalizado' ? formatResultArray(p) : [],
-        p1Wins: p.estado === 'finalizado' && p.ganador_id === p.p1?.id,
-        p2Wins: p.estado === 'finalizado' && p.ganador_id === p.p2?.id,
-        finished: p.estado === 'finalizado',
-        isPlaceholder: false,
-      })
-    })
-    
-    // Sort matches in each round by bracket_index automatically created during generation
-    Object.keys(roundsMap).forEach(fase => {
-      roundsMap[fase].sort((a, b) => a.bracket_index - b.bracket_index)
+      const hasParticipant = p.p1 || p.p2
+      const isConfigured = configLlave?.some(
+        (cfg) => cfg.fase === p.fase_bracket && cfg.match_index === p.bracket_index && (cfg.origen_p1 || cfg.origen_p2)
+      )
+      if (hasParticipant || isConfigured) {
+        activeMatchIds.add(p.id)
+      }
     })
 
-    return Object.keys(roundsMap)
-      .sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
-      .map((fase) => ({ title: fase, matches: roundsMap[fase] }))
+    // Propagate forward: if A is active, its next match is active
+    let addedNew = true
+    while (addedNew) {
+      addedNew = false
+      eliminatorios.forEach((p) => {
+        if (activeMatchIds.has(p.id) && p.siguiente_partido_id && !activeMatchIds.has(p.siguiente_partido_id)) {
+          activeMatchIds.add(p.siguiente_partido_id)
+          addedNew = true
+        }
+      })
+    }
+
+    // Determine the full set of phases we need to render
+    const phasesToRender = Array.from(new Set(eliminatorios.map(p => p.fase_bracket)))
+    phasesToRender.sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
+
+    // 2. Compute visual_index backward to align explicitly mapped asymmetric brackets
+    const visualIndices = new Map<string, number>()
+    eliminatorios.forEach(p => visualIndices.set(p.id, p.bracket_index))
+
+    for (let i = phasesToRender.length - 1; i >= 0; i--) {
+      const fase = phasesToRender[i]
+      const matchesInFase = eliminatorios.filter(p => p.fase_bracket === fase && activeMatchIds.has(p.id))
+      
+      matchesInFase.forEach(p => {
+        if (p.siguiente_partido_id) {
+           const nextMatchId = p.siguiente_partido_id
+           if (visualIndices.has(nextMatchId)) {
+             const nextVisualIdx = visualIndices.get(nextMatchId)!
+             const pos = p.posicion_siguiente_partido || 1
+             visualIndices.set(p.id, nextVisualIdx * 2 + (pos - 1))
+           }
+        }
+      })
+    }
+
+    const roundsMap: Record<string, any[]> = {}
+    
+    phasesToRender.forEach(fase => {
+      const matchesInFase = eliminatorios.filter(p => p.fase_bracket === fase)
+      
+      let maxIndex = (MATCHES_PER_FASE[fase] || 1) - 1
+      matchesInFase.forEach(m => {
+         const vIdx = visualIndices.get(m.id) ?? m.bracket_index
+         if (vIdx > maxIndex) maxIndex = vIdx
+      })
+      
+      roundsMap[fase] = []
+      const count = maxIndex + 1
+      
+      for (let i = 0; i < count; i++) {
+        const p = matchesInFase.find(m => (visualIndices.get(m.id) ?? m.bracket_index) === i)
+        if (p) {
+          const isActive = activeMatchIds.has(p.id)
+          roundsMap[fase].push({
+            id: p.id,
+            bracket_index: i, // Use the visual index
+            p1: p.p1?.nombre_mostrado || 'Esperando ganador...',
+            p2: p.p2?.nombre_mostrado || 'Esperando ganador...',
+            isP1Waiting: !p.p1,
+            isP2Waiting: !p.p2,
+            scoreStr: p.estado === 'finalizado' ? formatResultStr(p) : undefined,
+            scoreList: p.estado === 'finalizado' ? formatResultArray(p) : [],
+            p1Wins: p.estado === 'finalizado' && p.ganador_id === p.p1?.id,
+            p2Wins: p.estado === 'finalizado' && p.ganador_id === p.p2?.id,
+            finished: p.estado === 'finalizado',
+            isPlaceholder: false,
+            isHidden: !isActive,
+          })
+        } else {
+          roundsMap[fase].push({
+            id: `hidden-${fase}-${i}`,
+            bracket_index: i,
+            isHidden: true
+          })
+        }
+      }
+    })
+
+    return phasesToRender.map((fase) => ({ title: fase, matches: roundsMap[fase] }))
   }
 
   // Sin partidos reales: mostrar bracket teórico desde configuracion_llave
   if (configLlave && configLlave.length > 0) {
-    const roundsMap: Record<string, any[]> = {}
-    configLlave.forEach((cfg) => {
-      if (!roundsMap[cfg.fase]) roundsMap[cfg.fase] = []
-      roundsMap[cfg.fase][cfg.match_index] = {
-        id: `cfg-${cfg.id}`,
-        p1: cfg.origen_p1,
-        p2: cfg.origen_p2,
-        isPlaceholder: true,
-        bracket_index: cfg.match_index,
+    const activeIndicesByPhase: Record<string, Set<number>> = {}
+    configLlave.forEach(cfg => {
+      if (!activeIndicesByPhase[cfg.fase]) activeIndicesByPhase[cfg.fase] = new Set()
+      if (cfg.origen_p1 || cfg.origen_p2) {
+        activeIndicesByPhase[cfg.fase].add(cfg.match_index)
       }
     })
-    return Object.keys(roundsMap)
-      .sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
-      .map((fase) => ({ title: fase, matches: (roundsMap[fase] || []).filter(Boolean) }))
+
+    const phases = Object.keys(activeIndicesByPhase).sort((a, b) => FASES_ORDER.indexOf(a) - FASES_ORDER.indexOf(b))
+    
+    // Forward propagation
+    for (let i = 0; i < phases.length - 1; i++) {
+      const currentFase = phases[i]
+      const nextFase = phases[i + 1]
+      
+      if (!activeIndicesByPhase[nextFase]) activeIndicesByPhase[nextFase] = new Set()
+      
+      activeIndicesByPhase[currentFase].forEach(matchIdx => {
+        const nextMatchIdx = Math.floor(matchIdx / 2)
+        activeIndicesByPhase[nextFase].add(nextMatchIdx)
+      })
+    }
+
+    // Backward pass for theoretical visual indices
+    const visualIndices = new Map<string, number>()
+    configLlave.forEach(cfg => visualIndices.set(cfg.id, cfg.match_index))
+
+    for (let i = phases.length - 1; i >= 0; i--) {
+      const fase = phases[i]
+      const cfgs = configLlave.filter(c => c.fase === fase)
+      
+      cfgs.forEach(cfg => {
+        const currentVisualIdx = visualIndices.get(cfg.id)!
+        
+        const processOrigen = (origen: string, posOffset: number) => {
+          if (origen && origen.startsWith('Ganador')) {
+            const parts = origen.replace('Ganador ', '').split(' - P')
+            if (parts.length === 2) {
+               const prevFase = parts[0].trim()
+               const prevIdx = parseInt(parts[1].trim()) - 1
+               const sourceCfg = configLlave.find(c => c.fase === prevFase && c.match_index === prevIdx)
+               if (sourceCfg) {
+                  visualIndices.set(sourceCfg.id, currentVisualIdx * 2 + posOffset)
+               }
+            }
+          }
+        }
+        
+        processOrigen(cfg.origen_p1, 0)
+        processOrigen(cfg.origen_p2, 1)
+      })
+    }
+
+    const roundsMap: Record<string, any[]> = {}
+    phases.forEach(fase => {
+      let maxIndex = (MATCHES_PER_FASE[fase] || 1) - 1
+      configLlave.forEach(c => {
+         if (c.fase === fase) {
+            const vIdx = visualIndices.get(c.id) ?? c.match_index
+            if (vIdx > maxIndex) maxIndex = vIdx
+         }
+      })
+
+      const count = maxIndex + 1
+      roundsMap[fase] = []
+      
+      for (let i = 0; i < count; i++) {
+        const cfg = configLlave.find(c => c.fase === fase && (visualIndices.get(c.id) ?? c.match_index) === i)
+        const isActive = cfg ? activeIndicesByPhase[fase]?.has(cfg.match_index) : false
+        
+        if (cfg && isActive) {
+           roundsMap[fase].push({
+             id: `cfg-${cfg.id}`,
+             p1: cfg.origen_p1 || 'Esperando...',
+             p2: cfg.origen_p2 || 'Esperando...',
+             isPlaceholder: true,
+             bracket_index: i,
+             isHidden: false
+           })
+        } else {
+           roundsMap[fase].push({
+             id: `hidden-cfg-${fase}-${i}`,
+             bracket_index: i,
+             isHidden: true
+           })
+        }
+      }
+    })
+
+    return phases.map((fase) => ({ title: fase, matches: roundsMap[fase] }))
   }
 
   return []
@@ -234,7 +376,7 @@ function TorneoContent() {
       const { data: ms } = await supabase
         .from('partidos')
         .select(`
-          id, estado, resultado, zona_id, fase_bracket, bracket_index, fecha_hora, ganador_id, categoria_id,
+          id, estado, resultado, zona_id, fase_bracket, bracket_index, fecha_hora, ganador_id, categoria_id, siguiente_partido_id, posicion_siguiente_partido,
           p1:participantes!participante_1_id(id, nombre_mostrado),
           p2:participantes!participante_2_id(id, nombre_mostrado)
         `)
