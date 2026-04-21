@@ -3,14 +3,24 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import CategoryTabs from '@/components/public/CategoryTabs'
 import TournamentBracket from '@/components/public/TournamentBracket'
-import { useParams, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useState, useTransition } from 'react'
+import confetti from 'canvas-confetti'
 import { createClient } from '@/utils/supabase/client'
 import { calculateStandings } from '@/utils/standingsCalculator'
-import { Loader2, Activity, Calendar, Trophy, ChevronRight } from 'lucide-react'
+import { Activity, Calendar, Trophy } from 'lucide-react'
 
 // Utilidad para ordenar jerárquicamente las fases
 const FASES_ORDER = ['32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final']
+
+const MATCHES_PER_FASE: Record<string, number> = {
+  '32avos de Final': 32,
+  '16avos de Final': 16,
+  'Octavos de Final': 8,
+  'Cuartos de Final': 4,
+  'Semifinal': 2,
+  'Final': 1,
+}
 
 function buildBracket(partidos: any[], configLlave?: any[]): any[] {
   const eliminatorios = partidos.filter((p) => p.fase_bracket && p.fase_bracket !== 'Fase de Grupos')
@@ -56,6 +66,7 @@ function buildBracket(partidos: any[], configLlave?: any[]): any[] {
         p1: cfg.origen_p1,
         p2: cfg.origen_p2,
         isPlaceholder: true,
+        bracket_index: cfg.match_index,
       }
     })
     return Object.keys(roundsMap)
@@ -118,23 +129,66 @@ function formatResultArray(m: any) {
   })
 }
 
+function SkeletonZonas() {
+  return (
+    <div className="w-full grid md:grid-cols-2 gap-8">
+      {[0, 1].map(i => (
+        <div key={i} className="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+          <div className="h-10 bg-slate-800/60 animate-pulse" />
+          <div className="p-4 space-y-3">
+            {[0, 1, 2, 3].map(j => (
+              <div key={j} className="h-8 bg-slate-800/40 rounded animate-pulse" style={{ animationDelay: `${j * 80}ms` }} />
+            ))}
+          </div>
+          <div className="border-t border-surface-border p-4 space-y-2">
+            {[0, 1, 2].map(j => (
+              <div key={j} className="h-10 bg-slate-800/30 rounded animate-pulse" style={{ animationDelay: `${j * 60}ms` }} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SkeletonBracket() {
+  return (
+    <div className="flex gap-12 py-8 px-4 overflow-hidden">
+      {[0, 1, 2].map(col => (
+        <div key={col} className="flex flex-col gap-8 min-w-[220px]">
+          <div className="h-5 w-24 mx-auto bg-slate-700/50 rounded animate-pulse" />
+          {Array.from({ length: 4 >> col }).map((_, j) => (
+            <div key={j} className="bg-surface-card border border-surface-border rounded-lg overflow-hidden animate-pulse" style={{ animationDelay: `${j * 100}ms` }}>
+              <div className="h-9 border-b border-surface-border/50 bg-slate-800/40" />
+              <div className="h-9 bg-slate-800/20" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function TorneoContent() {
   const params = useParams()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const supabase = createClient()
-  
+
   const torneoId = params.id as string
   const [categories, setCategories] = useState<{id: string, name: string}[]>([])
-  
-  // Datos dinamicos
+
   const [zonas, setZonas] = useState<any[]>([])
   const [matches, setMatches] = useState<any[]>([])
   const [recentMatches, setRecentMatches] = useState<any[]>([])
   const [configLlave, setConfigLlave] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [isPending, startTransition] = useTransition()
 
   const currentCatId = searchParams.get('cat') || categories[0]?.id
   const [fase, setFase] = useState<'zonas'|'eliminatorias'|'campeones'>('zonas')
+  const [showChampionCard, setShowChampionCard] = useState(false)
+  const [hasShownChampion, setHasShownChampion] = useState(false)
 
   useEffect(() => {
     async function loadConfig() {
@@ -211,12 +265,102 @@ function TorneoContent() {
   const roundData = buildBracket(matches, configLlave)
   const zonaMatchesLookup = matches.filter(m => m.zona_id && (!m.fase_bracket || m.fase_bracket === 'Fase de Grupos'))
 
+  const finalMatch = matches.find(m => m.fase_bracket === 'Final' && m.estado === 'finalizado' && m.ganador_id && m.categoria_id === currentCatId)
+  const championName = finalMatch ? (finalMatch.ganador_id === finalMatch.p1?.id ? finalMatch.p1?.nombre_mostrado : (finalMatch.ganador_id === finalMatch.p2?.id ? finalMatch.p2?.nombre_mostrado : null)) : null
+
+  useEffect(() => {
+    if (fase === 'eliminatorias' && championName && !hasShownChampion) {
+       setShowChampionCard(true)
+       setHasShownChampion(true)
+    }
+  }, [fase, championName, hasShownChampion])
+
+  useEffect(() => {
+    if (showChampionCard) {
+      const duration = 3500;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 5,
+          angle: 60,
+          spread: 60,
+          origin: { x: 0, y: 0.6 },
+          colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'],
+          zIndex: 1000
+        });
+        confetti({
+          particleCount: 5,
+          angle: 120,
+          spread: 60,
+          origin: { x: 1, y: 0.6 },
+          colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'],
+          zIndex: 1000
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      setTimeout(frame, 300);
+    }
+  }, [showChampionCard]);
+
+  const handleTabClick = (catId: string) => {
+    startTransition(() => {
+      router.push(`?cat=${catId}`, { scroll: false })
+    })
+  }
+
   if (categories.length === 0) {
-    return <div className="h-40 flex items-center justify-center text-slate-500"><Loader2 className="animate-spin mr-2" /> Cargando torneo...</div>
+    return (
+      <div className="w-full grid md:grid-cols-2 gap-8 px-4 py-8">
+        {[0, 1].map(i => (
+          <div key={i} className="h-48 bg-surface-card border border-surface-border rounded-xl animate-pulse" />
+        ))}
+      </div>
+    )
   }
 
   return (
     <div className="w-full max-w-5xl mx-auto py-8">
+      <AnimatePresence>
+        {showChampionCard && championName && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.5, y: 50, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: 'spring', damping: 15, stiffness: 300 }}
+              className="relative shadow-2xl flex flex-col max-w-sm w-full mx-4"
+            >
+              <div className="absolute -inset-2 bg-gradient-to-r from-amber-400 via-brand-500 to-amber-400 rounded-[2.5rem] blur-xl opacity-60 animate-[pulse_3s_ease-in-out_infinite]" />
+              <div className="absolute -inset-1 bg-gradient-to-r from-amber-400 via-brand-500 to-amber-400 rounded-[2rem] blur-md opacity-80 animate-pulse" />
+              <div className="relative bg-surface p-1 rounded-[2rem] shadow-2xl">
+                 <div className="relative bg-surface-card border border-surface-border/50 p-8 md:p-12 w-full rounded-[calc(2rem-4px)] flex flex-col items-center text-center overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent pointer-events-none" />
+                    <Trophy size={80} strokeWidth={1} className="text-amber-400 drop-shadow-[0_0_20px_rgba(251,191,36,0.6)] mb-6 animate-bounce" />
+                    <h2 className="text-xl md:text-2xl font-bold text-slate-100 mb-2 relative z-10">¡Tenemos un Campeón!</h2>
+                    <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow-sm mb-8 relative z-10 leading-tight">
+                      {championName}
+                    </p>
+                    <button 
+                      onClick={() => setShowChampionCard(false)}
+                      className="px-8 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-500 font-bold tracking-widest uppercase text-sm transition-all hover:scale-105 active:scale-95 shadow-lg relative z-10"
+                    >
+                      Ver el Cuadro
+                    </button>
+                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* TICKER DE ULTIMOS RESULTADOS */}
       {recentMatches.length > 0 && (
@@ -262,16 +406,16 @@ function TorneoContent() {
         </div>
       )}
 
-      <CategoryTabs categories={categories} />
+      <CategoryTabs categories={categories} onTabClick={handleTabClick} />
 
       <div className="flex justify-center gap-4 mt-6 mb-2">
-        <button onClick={() => setFase('zonas')} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'zonas' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Fase de Grupos</button>
-        <button onClick={() => setFase('eliminatorias')} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'eliminatorias' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Eliminatorias</button>
+        <button onClick={() => startTransition(() => setFase('zonas'))} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'zonas' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Fase de Grupos</button>
+        <button onClick={() => startTransition(() => setFase('eliminatorias'))} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'eliminatorias' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Eliminatorias</button>
       </div>
       
-      <div className="mt-6 px-4 min-h-[400px]">
-        {loading ? (
-           <div className="h-40 flex items-center justify-center text-slate-500"><Loader2 className="animate-spin mr-2" /></div>
+      <div className="mt-6 px-4 min-h-[480px]">
+        {(loading || isPending) ? (
+          fase === 'eliminatorias' ? <SkeletonBracket /> : <SkeletonZonas />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div

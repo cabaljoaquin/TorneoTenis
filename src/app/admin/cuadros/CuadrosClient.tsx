@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Users, Loader2, Calendar } from 'lucide-react'
+import { Plus, Users, Loader2, Calendar, AlertCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 interface Props {
@@ -29,6 +29,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
   const [zonaScheduling, setZonaScheduling] = useState<{zona: any, jugadores: any[]} | null>(null)
   const [matchForm, setMatchForm] = useState({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
   const [isSavingMatch, setIsSavingMatch] = useState(false)
+  const [playoffsGenerados, setPlayoffsGenerados] = useState(false)
 
   useEffect(() => {
     if (!userId) return
@@ -64,8 +65,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
     if (torneoActivo && categoriaActiva) loadWorkspace(torneoActivo, categoriaActiva)
   }, [torneoActivo, categoriaActiva])
 
-  const loadWorkspace = async (tId: string, cId: string) => {
-    setLoading(true)
+  const loadWorkspace = async (tId: string, cId: string, showLoader = true) => {
+    if (showLoader) setLoading(true)
     
     const { data: ins } = await supabase
       .from('inscripciones')
@@ -99,10 +100,19 @@ export default function CuadrosWorkspace({ userId }: Props) {
       pZonasPartidos = pt || []
     }
 
+    const { count: countPlayoffs } = await supabase
+      .from('partidos')
+      .select('id', { count: 'exact', head: true })
+      .eq('torneo_id', tId)
+      .eq('categoria_id', cId)
+      .not('fase_bracket', 'is', null)
+      .neq('fase_bracket', 'Fase de Grupos')
+
     setInscripciones(ins || [])
     setZonas(zs || [])
     setParticipantesZonificados(pZonasData)
     setPartidosZona(pZonasPartidos)
+    setPlayoffsGenerados((countPlayoffs ?? 0) > 0)
     setLoading(false)
   }
 
@@ -119,19 +129,35 @@ export default function CuadrosWorkspace({ userId }: Props) {
   }
 
   const handleAssignToZone = async (zonaId: string, participante: any) => {
+    const pId = participante.participantes.id
+    // Update local state optimisticly for immediate feedback
+    setParticipantesZonificados(prev => [...prev, { id: 'temp-'+Date.now(), zona_id: zonaId, participante_id: pId }])
+
     const { error } = await supabase
       .from('participantes_zonas')
-      .insert({ zona_id: zonaId, participante_id: participante.participantes.id })
-    if (!error) loadWorkspace(torneoActivo, categoriaActiva)
-    else alert('Error asignando jugador: ' + error.message)
+      .insert({ zona_id: zonaId, participante_id: pId })
+
+    if (error) {
+      alert('Error asignando jugador: ' + error.message)
+      // Rollback on exact error
+      setParticipantesZonificados(prev => prev.filter(pz => !(pz.zona_id === zonaId && pz.participante_id === pId)))
+    }
+    // Silent background sync
+    loadWorkspace(torneoActivo, categoriaActiva, false)
   }
 
   const handleRemoveFromZone = async (zonaId: string, participanteId: string) => {
+    // Optimistic removal
+    setParticipantesZonificados(prev => prev.filter(pz => !(pz.zona_id === zonaId && pz.participante_id === participanteId)))
+    setPartidosZona(prev => prev.filter(p => p.zona_id !== zonaId)) // Clear visually the matches, will sync shortly
+
     await supabase.from('partidos').delete()
       .eq('zona_id', zonaId)
       .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`)
     const { error } = await supabase.from('participantes_zonas').delete().match({ zona_id: zonaId, participante_id: participanteId })
-    if (!error) loadWorkspace(torneoActivo, categoriaActiva)
+    
+    if (error) alert('Error quitando jugador: ' + error.message)
+    loadWorkspace(torneoActivo, categoriaActiva, false)
   }
 
   const handleCreateMatch = async () => {
@@ -158,14 +184,19 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
     setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
     setIsModalOpen(false)
-    loadWorkspace(torneoActivo, categoriaActiva)
+    loadWorkspace(torneoActivo, categoriaActiva, false)
     setIsSavingMatch(false)
   }
 
   const handleRemoveMatch = async (matchId: string) => {
     if (!confirm('¿Eliminar este partido de la zona?')) return
+    // Optimistic match removal
+    setPartidosZona(prev => prev.filter(p => p.id !== matchId))
     const { error } = await supabase.from('partidos').delete().eq('id', matchId)
-    if (!error) loadWorkspace(torneoActivo, categoriaActiva)
+    if (error) {
+      alert('Error borrando partido: ' + error.message)
+      loadWorkspace(torneoActivo, categoriaActiva, false)
+    }
   }
 
   if (!userId) return <p className="text-slate-500 text-center py-12">Sin sesión activa.</p>
@@ -224,17 +255,19 @@ export default function CuadrosWorkspace({ userId }: Props) {
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm text-slate-200 truncate">{ins.participantes.nombre_mostrado}</p>
                       </div>
-                      <div className="relative group">
-                        <button className="text-slate-500 hover:text-brand-400 p-1 text-lg leading-none">⋮</button>
-                        <div className="absolute right-0 top-full mt-1 bg-surface-card border border-surface-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 w-32 p-1">
-                          {zonas.length === 0
-                            ? <p className="text-[10px] p-2 text-slate-500">Creá zonas primero</p>
-                            : zonas.map(z => (
-                              <button key={z.id} onClick={() => handleAssignToZone(z.id, ins)} className="block w-full text-left px-2 py-1.5 hover:bg-brand-500/20 text-xs text-slate-300 rounded">Al {z.nombre}</button>
-                            ))
-                          }
+                      {!playoffsGenerados && (
+                        <div className="relative group">
+                          <button className="text-slate-500 hover:text-brand-400 p-1 text-lg leading-none">⋮</button>
+                          <div className="absolute right-0 top-full mt-1 bg-surface-card border border-surface-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 w-32 p-1">
+                            {zonas.length === 0
+                              ? <p className="text-[10px] p-2 text-slate-500">Creá zonas primero</p>
+                              : zonas.map(z => (
+                                <button key={z.id} onClick={() => handleAssignToZone(z.id, ins)} className="block w-full text-left px-2 py-1.5 hover:bg-brand-500/20 text-xs text-slate-300 rounded">Al {z.nombre}</button>
+                              ))
+                            }
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </motion.div>
                   ))
                 )}
@@ -244,19 +277,28 @@ export default function CuadrosWorkspace({ userId }: Props) {
 
           {/* COLUMNA DER: ZONAS */}
           <div className="space-y-6">
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                placeholder="Ej: Zona A, Round Robin 1..."
-                value={nuevaZonaName}
-                onChange={e => setNuevaZonaName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleCreateZona()}
-                className="input-field max-w-sm"
-              />
-              <button onClick={handleCreateZona} className="btn-primary py-2 px-4 shadow-lg shadow-brand-900/20">
-                <Plus size={18} className="inline mr-1" /> Crear Zona
-              </button>
-            </div>
+            {playoffsGenerados && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex gap-3 text-sm text-amber-300 mb-6">
+                 <AlertCircle size={20} className="shrink-0" />
+                 <p>La fase eliminatoria ya fue generada. La configuración de zonas y partidos de fase de grupos ha sido bloqueada. Si necesitás realizar cambios, primero debés eliminar TODOS los partidos eliminatorios desde la solapa "Playoffs".</p>
+              </div>
+            )}
+
+            {!playoffsGenerados && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Ej: Zona A, Round Robin 1..."
+                  value={nuevaZonaName}
+                  onChange={e => setNuevaZonaName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleCreateZona()}
+                  className="input-field max-w-sm"
+                />
+                <button onClick={handleCreateZona} className="btn-primary py-2 px-4 shadow-lg shadow-brand-900/20">
+                  <Plus size={18} className="inline mr-1" /> Crear Zona
+                </button>
+              </div>
+            )}
 
             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
               {zonas.map(zona => {
@@ -281,7 +323,9 @@ export default function CuadrosWorkspace({ userId }: Props) {
                           {jDeEstaZona.map(j => (
                             <div key={j.pId} className="flex items-center justify-between bg-surface border border-surface-border rounded p-1.5 text-xs">
                               <span className="font-medium text-slate-300 truncate pl-1">{j.nombre_mostrado}</span>
-                              <button onClick={() => handleRemoveFromZone(zona.id, j.pId)} className="text-red-400 hover:text-red-300 px-2 font-bold hover:bg-red-500/10 rounded ml-2">×</button>
+                              {!playoffsGenerados && (
+                                <button onClick={() => handleRemoveFromZone(zona.id, j.pId)} className="text-red-400 hover:text-red-300 px-2 font-bold hover:bg-red-500/10 rounded ml-2">×</button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -304,14 +348,16 @@ export default function CuadrosWorkspace({ userId }: Props) {
                                       : 'Sin fecha'}
                                   </span>
                                   <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                    {match.estado === 'pendiente' && (
+                                    {match.estado === 'pendiente' && !playoffsGenerados && (
                                       <button className="text-[10px] text-blue-400 hover:text-blue-300" onClick={() => {
                                         setZonaScheduling({ zona, jugadores: jDeEstaZona })
                                         setMatchForm({ id: match.id, p1: '', p2: '', fechaHora: match.fecha_hora ? match.fecha_hora.substring(0, 16) : '', sedeId: match.sede_id || '', fase: match.fase_bracket || 'Fase de Grupos' })
                                         setIsModalOpen(true)
                                       }}>Editar</button>
                                     )}
-                                    <button onClick={() => handleRemoveMatch(match.id)} className="text-[10px] text-red-400 hover:text-red-300">Borrar</button>
+                                    {!playoffsGenerados && (
+                                      <button onClick={() => handleRemoveMatch(match.id)} className="text-[10px] text-red-400 hover:text-red-300">Borrar</button>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -320,7 +366,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
                         </div>
                       )}
 
-                      {jugadoresSueltos.length > 0 && jDeEstaZona.length < 4 && (
+                      {jugadoresSueltos.length > 0 && jDeEstaZona.length < 4 && !playoffsGenerados && (
                         <div className="mt-2">
                           <select
                             className="w-full text-xs py-1.5 px-2 bg-surface border border-surface-border rounded text-slate-400 focus:text-slate-200 outline-none"
@@ -340,7 +386,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
                     </div>
                     <div className="p-3 border-t border-surface-border/50 bg-slate-900/20">
                       <button
-                        disabled={jDeEstaZona.length < 2}
+                        disabled={jDeEstaZona.length < 2 || playoffsGenerados}
                         onClick={() => {
                           setZonaScheduling({ zona, jugadores: jDeEstaZona })
                           setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })

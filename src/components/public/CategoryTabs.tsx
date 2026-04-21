@@ -6,9 +6,10 @@ import { Suspense } from 'react'
 
 interface CategoryTabsProps {
   categories: { id: string; name: string }[]
+  onTabClick?: (id: string) => void
 }
 
-function CategoryTabsContent({ categories }: CategoryTabsProps) {
+function CategoryTabsContent({ categories, onTabClick }: CategoryTabsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const currentCat = searchParams.get('cat') || categories[0]?.id
@@ -21,7 +22,7 @@ function CategoryTabsContent({ categories }: CategoryTabsProps) {
         return (
           <button
             key={cat.id}
-            onClick={() => router.push(`?cat=${cat.id}`, { scroll: false })}
+            onClick={() => onTabClick ? onTabClick(cat.id) : router.push(`?cat=${cat.id}`, { scroll: false })}
             className={`relative px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
               isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -48,3 +49,4 @@ export default function CategoryTabs(props: CategoryTabsProps) {
     </Suspense>
   )
 }
+

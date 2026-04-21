@@ -24,6 +24,7 @@ export default function PartidosClient({ userId }: Props) {
   const supabase = createClient()
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [savingMatchId, setSavingMatchId] = useState<string | null>(null)
   const [torneos, setTorneos] = useState<{id: string, nombre: string}[]>([])
   const [torneosIds, setTorneosIds] = useState<string[]>([])
 
@@ -72,7 +73,7 @@ export default function PartidosClient({ userId }: Props) {
       .from('partidos')
       .select(`
         id, fecha_hora, estado, participante_1_id, participante_2_id, ganador_id, resultado, fase_bracket,
-        siguiente_partido_id, posicion_siguiente_partido,
+        siguiente_partido_id, posicion_siguiente_partido, updated_at,
         sedes(nombre),
         p1:participantes!participante_1_id(id, nombre_mostrado),
         p2:participantes!participante_2_id(id, nombre_mostrado)
@@ -87,7 +88,7 @@ export default function PartidosClient({ userId }: Props) {
       // Ordenamos primero por fase de grupos para que se jueguen primero, y luego eliminatorias, y fecha
       query = query.eq('estado', 'pendiente').order('fecha_hora', { ascending: true, nullsFirst: false }).order('id')
     } else {
-      query = query.eq('estado', 'finalizado').order('fecha_hora', { ascending: false }).limit(30)
+      query = query.eq('estado', 'finalizado').order('updated_at', { ascending: false, nullsLast: true }).order('fecha_hora', { ascending: false }).limit(30)
     }
 
     if (filterCat !== 'all') query = query.eq('categoria_id', filterCat)
@@ -138,7 +139,7 @@ export default function PartidosClient({ userId }: Props) {
     const parsedSets = parseTennisScore(scoreStr)
     if (parsedSets.length === 0) return alert('Formato de resultado inválido.')
 
-    setLoading(true)
+    setSavingMatchId(id)
 
     // Buscamos si este partido apunta a un siguiente_partido_id
     const currentMatch = matches.find(m => m.id === id)
@@ -156,7 +157,7 @@ export default function PartidosClient({ userId }: Props) {
 
     if (error) {
       alert('Error guardando partido: ' + error.message)
-      setLoading(false)
+      setSavingMatchId(null)
       return
     }
 
@@ -177,7 +178,8 @@ export default function PartidosClient({ userId }: Props) {
 
     setSelectedWinners(prev => { const n = { ...prev }; delete n[id]; return n })
     setInputs(prev => { const n = { ...prev }; delete n[id]; return n })
-    fetchMatches()
+    await fetchMatches()
+    setSavingMatchId(null)
   }
 
   return (
@@ -270,7 +272,7 @@ export default function PartidosClient({ userId }: Props) {
                     <input
                       type="text"
                       placeholder="Ex: 6475"
-                      disabled={loading}
+                      disabled={savingMatchId !== null || loading}
                       value={inputs[match.id] || ''}
                       onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
                       onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
@@ -278,11 +280,11 @@ export default function PartidosClient({ userId }: Props) {
                     />
                     <button
                       onClick={() => handleScoreSubmit(match.id)}
-                      disabled={loading}
+                      disabled={savingMatchId !== null || loading}
                       className="p-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-all disabled:opacity-50"
                       title="Guardar partido"
                     >
-                      {loading ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
+                      {savingMatchId === match.id ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
                     </button>
                   </div>
                 </div>

@@ -53,12 +53,17 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
             {round.matches.map((match) => (
               <div
                 key={match.id}
-                className={`relative rounded-lg overflow-hidden flex flex-col shadow-lg shadow-black/20 ${
+                className={match.isHidden ? "opacity-0 pointer-events-none h-[88px] w-full" : `relative rounded-lg overflow-hidden flex flex-col shadow-lg shadow-black/20 ${
                   match.isPlaceholder
                     ? 'bg-amber-500/5 border border-amber-500/30'
                     : 'bg-surface-card border border-surface-border'
                 }`}
               >
+                {match.isPlaceholder && !match.isHidden && (
+                  <div className="absolute -left-[1px] -top-[1px] bg-slate-900 border border-slate-700/50 text-slate-500 text-[9px] font-bold px-1.5 rounded-br-lg z-10">
+                    P{match.bracket_index !== undefined ? match.bracket_index + 1 : rIndex + 1}
+                  </div>
+                )}
                 {/* Badge placeholder */}
                 {match.isPlaceholder && (
                   <div className="px-3 pt-1.5 pb-0">
@@ -129,10 +134,10 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
                 </div>
 
                 {/* Conectores */}
-                {rIndex < rounds.length - 1 && (
+                {!match.isHidden && rIndex < rounds.length - 1 && (
                   <div className="absolute top-1/2 -right-6 w-6 h-px bg-surface-border" />
                 )}
-                {rIndex > 0 && (
+                {!match.isHidden && rIndex > 0 && (
                   <div className="absolute top-1/2 -left-6 w-6 h-px bg-surface-border" />
                 )}
               </div>

@@ -7,9 +7,11 @@ import { createClient } from '@/utils/supabase/client'
 import TournamentBracket from '@/components/public/TournamentBracket'
 import { calculateStandings, parseOrigen } from '@/utils/standingsCalculator'
 
-const FASES_OPTIONS = ['Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final']
+const FASES_OPTIONS = ['32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final']
 
 const MATCHES_PER_FASE: Record<string, number> = {
+  '32avos de Final': 32,
+  '16avos de Final': 16,
   'Octavos de Final': 8,
   'Cuartos de Final': 4,
   'Semifinal': 2,
@@ -38,6 +40,7 @@ export default function PlayoffsClient({ userId }: Props) {
 
   const [zonas, setZonas] = useState<any[]>([])
   const [cruces, setCruces] = useState<Cruce[]>([])
+  const [allConfigLlave, setAllConfigLlave] = useState<any[]>([])
 
   const [loading, setLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -54,14 +57,37 @@ export default function PlayoffsClient({ userId }: Props) {
     POS_LABELS.slice(0, 4).forEach((pos) => {
       zonas.forEach((z) => opts.push(`${pos} ${z.nombre}`))
     })
+    
+    // Add "Ganador Fase Previa" options ONLY if they actually exist in DB
+    const activeIdx = FASES_OPTIONS.indexOf(faseActiva)
+    if (activeIdx > 0) {
+      for (let i = 0; i < activeIdx; i++) {
+        const prevPhaseName = FASES_OPTIONS[i]
+        const prevPhaseConfigs = allConfigLlave.filter(c => c.fase === prevPhaseName)
+        prevPhaseConfigs.forEach(c => {
+          opts.push(`Ganador ${prevPhaseName} - P${c.match_index + 1}`)
+        })
+      }
+    }
+    
     return opts
-  }, [zonas])
+  }, [zonas, faseActiva, allConfigLlave])
 
   // Un origen no puede repetirse entre partidos distintos de la misma fase.
   // Dentro del mismo partido, p1 y p2 deben ser distintos.
   // Si una posicion ya fue asignada en otra fila, desaparece de las opciones restantes.
   const getAvailableOptions = (matchIdx: number, field: 'p1' | 'p2'): string[] => {
     const taken = new Set<string>()
+    
+    // 1. Bloquear posiciones que ya fueron usadas en otras fases de este torneo
+    allConfigLlave.forEach(c => {
+      if (c.fase !== faseActiva) {
+        if (c.origen_p1) taken.add(c.origen_p1)
+        if (c.origen_p2) taken.add(c.origen_p2)
+      }
+    })
+
+    // 2. Bloquear posiciones locales dentro de la fase actual
     cruces.forEach((cruce, i) => {
       if (i === matchIdx) {
         const opposite = field === 'p1' ? cruce.p2 : cruce.p1
@@ -71,6 +97,7 @@ export default function PlayoffsClient({ userId }: Props) {
         if (cruce.p2) taken.add(cruce.p2)
       }
     })
+    
     const currentValue = cruces[matchIdx]?.[field]
     return origenOptions.filter((o) => !taken.has(o) || o === currentValue)
   }
@@ -122,7 +149,7 @@ export default function PlayoffsClient({ userId }: Props) {
           .select('*')
           .eq('torneo_id', torneoActivo)
           .eq('categoria_id', categoriaActiva)
-          .eq('fase', faseActiva)
+          .order('fase')
           .order('match_index'),
         supabase
           .from('partidos')
@@ -143,11 +170,13 @@ export default function PlayoffsClient({ userId }: Props) {
     setZonas(zs || [])
     setPlayoffsYaGenerados((existCount ?? 0) > 0)
     setPendingCount(pendCount ?? 0)
+    setAllConfigLlave(configLlave || [])
 
     // Restaurar configuracion guardada o inicializar vacío
     const count = MATCHES_PER_FASE[faseActiva] || 1
+    const activeConfig = (configLlave || []).filter((c) => c.fase === faseActiva)
     const restored = Array.from({ length: count }, (_, i) => {
-      const saved = configLlave?.find((c) => c.match_index === i)
+      const saved = activeConfig.find((c) => c.match_index === i)
       return saved ? { p1: saved.origen_p1, p2: saved.origen_p2 } : { p1: '', p2: '' }
     })
     setCruces(restored)
@@ -158,7 +187,7 @@ export default function PlayoffsClient({ userId }: Props) {
     setIsSaving(true)
     setMsg(null)
 
-    const toUpsert = cruces
+    const toInsert = cruces
       .map((c, i) => ({
         torneo_id: torneoActivo,
         categoria_id: categoriaActiva,
@@ -169,21 +198,32 @@ export default function PlayoffsClient({ userId }: Props) {
       }))
       .filter((c) => c.origen_p1 && c.origen_p2)
 
-    if (toUpsert.length === 0) {
-      setMsg({ type: 'error', text: 'Completá al menos un cruce antes de guardar.' })
+    // Borramos las configuraciones previas SOLO para esta fase y categoría,
+    // permitiendo así conservar configuraciones simultáneas en otras fases (Ej: 16avos y Octavos a la vez).
+    const { error: delError } = await supabase
+      .from('configuracion_llave')
+      .delete()
+      .eq('torneo_id', torneoActivo)
+      .eq('categoria_id', categoriaActiva)
+      .eq('fase', faseActiva)
+
+    if (delError) {
+      setMsg({ type: 'error', text: 'Error limpiando configuración vieja: ' + delError.message })
       setIsSaving(false)
       return
     }
 
-    const { error } = await supabase.from('configuracion_llave').upsert(toUpsert, {
-      onConflict: 'torneo_id,categoria_id,fase,match_index',
-    })
+    if (toInsert.length > 0) {
+      const { error: insError } = await supabase.from('configuracion_llave').insert(toInsert)
+      setMsg(
+        insError
+          ? { type: 'error', text: 'Error al reescribir configuración: ' + insError.message }
+          : { type: 'success', text: 'Configuración guardada y sincronizada correctamente.' }
+      )
+    } else {
+      setMsg({ type: 'success', text: 'Configuración de llave restablecida (vacía).' })
+    }
 
-    setMsg(
-      error
-        ? { type: 'error', text: 'Error al guardar: ' + error.message }
-        : { type: 'success', text: 'Configuración guardada. Ya es visible en la vista pública.' }
-    )
     setIsSaving(false)
   }
 
@@ -228,18 +268,28 @@ export default function PlayoffsClient({ userId }: Props) {
       return
     }
 
-    // Guard: cruces incompletos
-    const crucesIncompletos = cruces.filter((c) => !c.p1 || !c.p2)
-    if (crucesIncompletos.length > 0) {
-      setMsg({ type: 'error', text: 'Hay cruces sin definir. Completá toda la configuración de la llave antes de generar.' })
+    // Fetch todas las configuraciones teóricas guardadas globalmente
+    const { data: allCfg } = await supabase
+      .from('configuracion_llave')
+      .select('*')
+      .eq('torneo_id', torneoActivo)
+      .eq('categoria_id', categoriaActiva)
+
+    if (!allCfg || allCfg.length === 0) {
+      setMsg({ type: 'error', text: 'No hay ninguna configuración teórica de llaves guardada para este torneo/categoría.' })
       setIsGenerating(false)
       return
     }
 
-    // Identificar el índice de la fase inicial
-    const startIndex = FASES_OPTIONS.indexOf(faseActiva)
-    if (startIndex === -1) {
-      setMsg({ type: 'error', text: 'Fase inicial desconocida.' })
+    // Identificar el índice de la fase inicial (la fase más temprana encontrada en la BD)
+    let startIndex = FASES_OPTIONS.length
+    allCfg.forEach(c => {
+      const idx = FASES_OPTIONS.indexOf(c.fase)
+      if (idx !== -1 && idx < startIndex) startIndex = idx
+    })
+
+    if (startIndex >= FASES_OPTIONS.length) {
+      setMsg({ type: 'error', text: 'Fase inicial desconocida en la configuración guardada.' })
       setIsGenerating(false)
       return
     }
@@ -276,8 +326,8 @@ export default function PlayoffsClient({ userId }: Props) {
 
     // Resolver cruces → participante_id reales
     // Usamos Web Crypto API para pre-generar los UUIDs del árbol completo
-    const treeLevels = []
-    let currentMatchCount = cruces.length
+    const treeLevels: any[][] = []
+    let currentMatchCount = MATCHES_PER_FASE[FASES_OPTIONS[startIndex]] || 1
     let phaseIndexOffset = 0
 
     // Construir la estructura lógica del árbol
@@ -290,6 +340,7 @@ export default function PlayoffsClient({ userId }: Props) {
           id: crypto.randomUUID(),
           fase_bracket: currentFaseName,
           bracket_index: i,
+          original_db_index: i, // reference needed in case it moves
           participante_1_id: null as string | null,
           participante_2_id: null as string | null,
           siguiente_partido_id: null as string | null,
@@ -303,41 +354,75 @@ export default function PlayoffsClient({ userId }: Props) {
       phaseIndexOffset++
     }
 
-    // Vincular siguientes partidos y armar los participantes de la fase inicial
+    // Conexión matemática por defecto
     for (let levelIdx = 0; levelIdx < treeLevels.length; levelIdx++) {
       const currentLevel = treeLevels[levelIdx]
       const nextLevel = treeLevels[levelIdx + 1]
 
       for (let i = 0; i < currentLevel.length; i++) {
         const match = currentLevel[i]
-
-        // Asignar participantes reales SOLO para la primer fase (Nivel 0)
-        if (levelIdx === 0) {
-          const cruce = cruces[i]
-          const p1id = parseOrigen(cruce.p1, zonasConPart || [], standingsMap)
-          const p2id = parseOrigen(cruce.p2, zonasConPart || [], standingsMap)
-
-          if (!p1id || !p2id) {
-            setMsg({
-              type: 'error',
-              text: `No se pudo resolver el cruce ${i + 1}: "${cruce.p1}" vs "${cruce.p2}".`,
-            })
-            setIsGenerating(false)
-            return
-          }
-          match.participante_1_id = p1id
-          match.participante_2_id = p2id
-        }
-
-        // Conectar con el partido de la fase siguiente
         if (nextLevel) {
           const nextMatchIdx = Math.floor(i / 2)
           if (nextLevel[nextMatchIdx]) {
             match.siguiente_partido_id = nextLevel[nextMatchIdx].id
-            match.posicion_siguiente_partido = (i % 2) === 0 ? 1 : 2 // 1: Arriba(p1), 2: Abajo(p2)
+            match.posicion_siguiente_partido = (i % 2) === 0 ? 1 : 2 // 1: Arriba, 2: Abajo
           }
         }
       }
+    }
+
+    // Función auxiliar para parsear y conectar orígenes declarados
+    const applyOrigen = (origen: string, targetMatch: any, pos: number) => {
+      if (!origen) return
+      if (origen.startsWith('Ganador')) {
+        // Formato: "Ganador 16avos de Final - P1"
+        const parts = origen.replace('Ganador ', '').split(' - P')
+        if (parts.length === 2) {
+          const prevFaseName = parts[0].trim()
+          const prevMatchIdx = parseInt(parts[1].trim()) - 1
+          
+          const prevFaseIdx = FASES_OPTIONS.indexOf(prevFaseName)
+          const levelIdx = prevFaseIdx - startIndex
+          if (levelIdx >= 0 && treeLevels[levelIdx] && treeLevels[levelIdx][prevMatchIdx]) {
+            const sourceMatch = treeLevels[levelIdx][prevMatchIdx]
+            sourceMatch.siguiente_partido_id = targetMatch.id
+            sourceMatch.posicion_siguiente_partido = pos
+          }
+        }
+      } else {
+        const pId = parseOrigen(origen, zonasConPart || [], standingsMap)
+        if (pId) {
+          if (pos === 1) targetMatch.participante_1_id = pId
+          else targetMatch.participante_2_id = pId
+        } else {
+          console.warn(`No se encontró participante para el origen: ${origen}`)
+        }
+      }
+    }
+
+    // Aplicar los overrides y asignaciones basados en la DB (todas las fases activas)
+    // Esto sobreescribe los default links matemáticos con los links de Byes/Cascadas.
+    let parseError = false
+    allCfg.forEach(cfg => {
+      const faseIdx = FASES_OPTIONS.indexOf(cfg.fase)
+      const levelIdx = faseIdx - startIndex
+      if (levelIdx < 0 || !treeLevels[levelIdx]) return
+
+      const match = treeLevels[levelIdx][cfg.match_index]
+      if (!match) return
+
+      try {
+        if (cfg.origen_p1) applyOrigen(cfg.origen_p1, match, 1)
+        if (cfg.origen_p2) applyOrigen(cfg.origen_p2, match, 2)
+      } catch (e) {
+        parseError = true
+      }
+    })
+
+    if (parseError) {
+      setMsg({ type: 'error', text: 'Ocurrió un error interpretando los orígenes y conexiones de llave.' })
+      setIsGenerating(false)
+      return
     }
 
     const partidosInsert: any[] = []
@@ -392,8 +477,8 @@ export default function PlayoffsClient({ userId }: Props) {
   }, [cruces, faseActiva])
 
 
-  const allCrucesValid = cruces.length > 0 && cruces.every((c) => c.p1 && c.p2)
-  const canGenerate = !playoffsYaGenerados && allCrucesValid && pendingCount === 0
+  // Validación relajada para generación (se basa en config global, no solo en la activa)
+  const canGenerate = !playoffsYaGenerados && pendingCount === 0
 
 
   if (!userId) return <p className="text-slate-500 text-center py-12">Sin sesión activa.</p>
@@ -487,7 +572,7 @@ export default function PlayoffsClient({ userId }: Props) {
                           key={i}
                           className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-2 bg-surface/50 border border-surface-border rounded-lg p-3"
                         >
-                          <span className="text-[10px] font-bold text-slate-600 w-5 text-center">{i + 1}</span>
+                          <span className="text-[10px] font-bold text-slate-600 w-6 text-center">P{i + 1}</span>
                           <select
                             value={cruce.p1}
                             onChange={(e) =>
@@ -576,11 +661,11 @@ export default function PlayoffsClient({ userId }: Props) {
                   </div>
                 )}
 
-                {!allCrucesValid && !playoffsYaGenerados && (
+                {!playoffsYaGenerados && cruces.some(c => !c.p1 || !c.p2) && (
                   <div className="flex items-start gap-3 p-3 bg-surface/50 border border-surface-border rounded-lg">
                     <AlertCircle size={16} className="text-slate-500 shrink-0 mt-0.5" />
                     <p className="text-slate-500 text-xs">
-                      Completá y guardá todos los cruces de la llave antes de poder generar los partidos.
+                      Guardá la configuración actúal de tus partidos en cada fase antes de generar el torneo global.
                     </p>
                   </div>
                 )}
