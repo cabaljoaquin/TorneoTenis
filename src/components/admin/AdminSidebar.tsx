@@ -66,7 +66,7 @@ export default function AdminSidebar({ isOpen, isDesktopCollapsed, onClose, torn
           fixed top-0 left-0 h-full z-40 flex flex-col w-72 shrink-0
           bg-surface-card border-surface-border
           transition-all duration-300 ease-in-out
-          md:sticky md:top-0 md:h-screen md:z-auto
+          md:static md:h-full md:z-auto
           ${isOpen ? 'translate-x-0 border-r' : '-translate-x-full border-r md:translate-x-0'}
           ${isDesktopCollapsed ? 'md:w-0 md:border-r-0 md:opacity-0 md:overflow-hidden' : 'md:w-64 md:opacity-100 md:border-r'}
         `}

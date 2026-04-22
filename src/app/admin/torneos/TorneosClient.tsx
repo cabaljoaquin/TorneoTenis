@@ -204,29 +204,29 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
           {torneos.map((t) => (
             <div
               key={t.id}
-              className="bg-surface-card border border-surface-border rounded-2xl p-5 flex items-center justify-between gap-4 group hover:border-brand-500/30 transition-all shadow-sm"
+              className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden group hover:border-brand-500/30 transition-all shadow-sm"
             >
-              {/* Icono + Info */}
-              <div className="flex items-center gap-4 min-w-0">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${t.estado === 'En curso' ? 'bg-brand-500/10 text-brand-400' : 'bg-slate-800 text-slate-600'}`}>
+              {/* Info row */}
+              <div className="flex items-center gap-4 p-4">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${t.estado === 'En curso' ? 'bg-brand-500/10 text-brand-400' : 'bg-slate-800 text-slate-600'}`}>
                   <Trophy size={20} />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-slate-100 text-lg truncate">{t.nombre}</h3>
+                    <h3 className="font-bold text-slate-100 text-base leading-tight truncate">{t.nombre}</h3>
                     {!t.visible && (
                       <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-400 border border-slate-600/40 shrink-0">
                         Oculto
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">
-                    <span className="flex items-center gap-1.5">
-                      <MapPin size={12} />
+                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <MapPin size={11} />
                       {t.sedes?.nombre || 'Sin sede'}
                     </span>
-                    <span className="flex items-center gap-1.5">
-                      <Calendar size={12} />
+                    <span className="flex items-center gap-1">
+                      <Calendar size={11} />
                       {t.fecha_inicio
                         ? new Date(t.fecha_inicio.slice(0, 10) + 'T12:00:00').toLocaleDateString('es-AR')
                         : 'Sin fecha'}
@@ -236,50 +236,52 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                 </div>
               </div>
 
-              {/* Acciones */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Acciones — barra completa en mobile, inline en desktop */}
+              <div className="flex border-t border-surface-border/60 divide-x divide-surface-border/60 sm:border-none sm:divide-none sm:p-4 sm:pt-0 sm:gap-2 sm:justify-end">
+
                 {/* Visibilidad */}
                 <button
                   onClick={() => toggleVisible(t.id, t.visible)}
                   disabled={togglingVisId === t.id}
                   title={t.visible ? 'Ocultar del público' : 'Publicar'}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border disabled:opacity-50 ${
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold transition-all sm:border disabled:opacity-50 ${
                     t.visible
-                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20'
-                      : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                      ? 'text-sky-400 sm:bg-sky-500/10 sm:border-sky-500/20 sm:hover:bg-sky-500/20'
+                      : 'text-slate-500 sm:bg-slate-800 sm:border-slate-700 sm:hover:text-slate-300'
                   }`}
                 >
                   {togglingVisId === t.id
-                    ? <Loader2 size={13} className="animate-spin" />
-                    : t.visible ? <Eye size={13} /> : <EyeOff size={13} />
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : t.visible ? <Eye size={14} /> : <EyeOff size={14} />
                   }
-                  <span className="hidden sm:inline">{t.visible ? 'Público' : 'Oculto'}</span>
+                  <span>{t.visible ? 'Público' : 'Oculto'}</span>
                 </button>
 
                 {/* Estado */}
                 <button
                   onClick={() => toggleEstado(t.id, t.estado)}
                   disabled={togglingId === t.id}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition-all border disabled:opacity-50 ${
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold uppercase tracking-wider transition-all sm:border disabled:opacity-50 ${
                     t.estado === 'En curso'
-                      ? 'bg-brand-500/10 text-brand-400 border-brand-500/20 hover:bg-brand-500/20'
-                      : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                      ? 'text-brand-400 sm:bg-brand-500/10 sm:border-brand-500/20 sm:hover:bg-brand-500/20'
+                      : 'text-slate-500 sm:bg-slate-800 sm:border-slate-700 sm:hover:text-slate-300'
                   }`}
                 >
                   {togglingId === t.id
-                    ? <Loader2 size={13} className="animate-spin" />
-                    : t.estado === 'En curso' ? <CheckCircle2 size={13} /> : <Circle size={13} />
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : t.estado === 'En curso' ? <CheckCircle2 size={14} /> : <Circle size={14} />
                   }
-                  <span className="hidden sm:inline">{t.estado}</span>
+                  <span>{t.estado === 'En curso' ? 'Activo' : 'Inactivo'}</span>
                 </button>
 
                 {/* Editar */}
                 <button
                   onClick={() => openEdit(t)}
-                  className="p-2 rounded-lg text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 border border-transparent hover:border-brand-500/20 transition-all"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-2 sm:px-3 sm:rounded-lg text-xs font-semibold text-slate-400 hover:text-brand-400 sm:hover:bg-brand-500/10 sm:border sm:border-transparent sm:hover:border-brand-500/20 transition-all"
                   title="Editar torneo"
                 >
-                  <Pencil size={15} />
+                  <Pencil size={14} />
+                  <span>Editar</span>
                 </button>
               </div>
             </div>

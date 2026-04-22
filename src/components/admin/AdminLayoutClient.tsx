@@ -22,7 +22,7 @@ export default function AdminLayoutClient({ children, torneoCount }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen bg-surface overflow-hidden">
+    <div className="flex h-screen bg-surface overflow-hidden">
       <AdminSidebar 
         isOpen={sidebarOpen} 
         isDesktopCollapsed={desktopCollapsed}
@@ -30,7 +30,7 @@ export default function AdminLayoutClient({ children, torneoCount }: Props) {
         torneoCount={torneoCount}
       />
 
-      <div className="flex flex-col flex-1 min-w-0 transition-all duration-300">
+      <div className="flex flex-col flex-1 min-w-0 overflow-y-auto transition-all duration-300">
         {/* Header con burger funcional en web y mobile */}
         <header className="flex items-center justify-between px-4 md:px-6 py-3.5 border-b border-surface-border bg-surface-card/80 backdrop-blur-sm sticky top-0 z-20">
           <div className="flex items-center gap-3">

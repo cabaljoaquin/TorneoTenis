@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Users, Loader2, Calendar, AlertCircle } from 'lucide-react'
+import { Plus, Users, Loader2, Calendar, AlertCircle, Zap, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 interface Props {
@@ -30,6 +30,9 @@ export default function CuadrosWorkspace({ userId }: Props) {
   const [matchForm, setMatchForm] = useState({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
   const [isSavingMatch, setIsSavingMatch] = useState(false)
   const [playoffsGenerados, setPlayoffsGenerados] = useState(false)
+  const [isGeneratingCruces, setIsGeneratingCruces] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -92,7 +95,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
     if (zoneIds.length > 0) {
       const { data: pt } = await supabase
         .from('partidos')
-        .select(`id, zona_id, fecha_hora, fase_bracket, sede_id, estado,
+        .select(`id, zona_id, fecha_hora, fase_bracket, sede_id, estado, participante_1_id, participante_2_id,
           p1:participantes!participante_1_id(nombre_mostrado),
           p2:participantes!participante_2_id(nombre_mostrado)
         `)
@@ -205,6 +208,72 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
   }
 
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const handleGenerarCruces = async () => {
+    if (zonas.length === 0) return showToast('No hay zonas creadas para generar cruces.', 'error')
+    setIsGeneratingCruces(true)
+
+    // Fetch existing zona matches to ensure idempotency
+    const zoneIds = zonas.map(z => z.id)
+    const { data: existingMatches } = await supabase
+      .from('partidos')
+      .select('participante_1_id, participante_2_id, zona_id')
+      .in('zona_id', zoneIds)
+
+    const existingSet = new Set(
+      (existingMatches || []).map(m => {
+        const [a, b] = [m.participante_1_id, m.participante_2_id].sort()
+        return `${m.zona_id}:${a}:${b}`
+      })
+    )
+
+    const newMatches: any[] = []
+
+    for (const zona of zonas) {
+      const jugadoresDeZona = participantesZonificados
+        .filter(pz => pz.zona_id === zona.id)
+        .map(pz => pz.participante_id)
+
+      for (let i = 0; i < jugadoresDeZona.length; i++) {
+        for (let j = i + 1; j < jugadoresDeZona.length; j++) {
+          const p1 = jugadoresDeZona[i]
+          const p2 = jugadoresDeZona[j]
+          const key = `${zona.id}:${[p1, p2].sort().join(':')}`
+          if (!existingSet.has(key)) {
+            newMatches.push({
+              torneo_id: torneoActivo,
+              categoria_id: categoriaActiva,
+              zona_id: zona.id,
+              participante_1_id: p1,
+              participante_2_id: p2,
+              fase_bracket: 'Fase de Grupos',
+              estado: 'pendiente',
+            })
+          }
+        }
+      }
+    }
+
+    if (newMatches.length === 0) {
+      setIsGeneratingCruces(false)
+      return showToast('Todos los cruces ya existen. No se crearon partidos nuevos.', 'success')
+    }
+
+    const { error } = await supabase.from('partidos').insert(newMatches)
+    setIsGeneratingCruces(false)
+
+    if (error) {
+      showToast('Error al generar cruces: ' + error.message, 'error')
+    } else {
+      showToast(`Se generaron ${newMatches.length} partidos nuevos con éxito.`, 'success')
+      loadWorkspace(torneoActivo, categoriaActiva, false)
+    }
+  }
+
   if (!userId) return <p className="text-slate-500 text-center py-12">Sin sesión activa.</p>
 
   return (
@@ -217,7 +286,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
           </h2>
           <p className="text-slate-400 text-sm mt-1">Configuración manual de grupos para administrar agendas.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <select value={torneoActivo} onChange={e => setTorneoActivo(e.target.value)} className="select-field py-1.5 h-10">
             {torneos.length === 0
               ? <option value="">Sin torneos activos</option>
@@ -227,6 +296,23 @@ export default function CuadrosWorkspace({ userId }: Props) {
           <select value={categoriaActiva} onChange={e => setCategoriaActiva(e.target.value)} className="select-field py-1.5 h-10">
             {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
+          {!playoffsGenerados && zonas.length > 0 && (
+            <button
+              id="btn-generar-cruces"
+              onClick={handleGenerarCruces}
+              disabled={isGeneratingCruces}
+              className="flex items-center gap-2 px-4 py-2 h-10 rounded-lg font-semibold text-sm
+                bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500
+                text-white shadow-lg shadow-violet-900/30 transition-all
+                disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {isGeneratingCruces
+                ? <Loader2 size={16} className="animate-spin" />
+                : <Zap size={16} />
+              }
+              Generar Cruces de Zonas
+            </button>
+          )}
         </div>
       </div>
 
@@ -262,16 +348,21 @@ export default function CuadrosWorkspace({ userId }: Props) {
                         <p className="font-semibold text-sm text-slate-200 truncate">{ins.participantes.nombre_mostrado}</p>
                       </div>
                       {!playoffsGenerados && (
-                        <div className="relative group">
-                          <button className="text-slate-500 hover:text-brand-400 p-1 text-lg leading-none">⋮</button>
-                          <div className="absolute right-0 top-full mt-1 bg-surface-card border border-surface-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 w-32 p-1">
-                            {zonas.length === 0
-                              ? <p className="text-[10px] p-2 text-slate-500">Creá zonas primero</p>
-                              : zonas.map(z => (
-                                <button key={z.id} onClick={() => handleAssignToZone(z.id, ins)} className="block w-full text-left px-2 py-1.5 hover:bg-brand-500/20 text-xs text-slate-300 rounded">Al {z.nombre}</button>
-                              ))
-                            }
-                          </div>
+                        <div className="relative">
+                          <button onClick={() => setOpenMenuId(openMenuId === ins.id ? null : ins.id)} className="text-slate-500 hover:text-brand-400 p-2 text-lg leading-none">⋮</button>
+                          {openMenuId === ins.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                              <div className="absolute right-0 top-full mt-1 bg-surface-card border border-surface-border rounded-lg shadow-xl z-20 w-36 p-1">
+                                {zonas.length === 0
+                                  ? <p className="text-[10px] p-2 text-slate-500">Creá zonas primero</p>
+                                  : zonas.map(z => (
+                                    <button key={z.id} onClick={() => { handleAssignToZone(z.id, ins); setOpenMenuId(null) }} className="block w-full text-left px-3 py-2 hover:bg-brand-500/20 active:bg-brand-500/30 text-xs text-slate-300 rounded">Al {z.nombre}</button>
+                                  ))
+                                }
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                     </motion.div>
@@ -353,11 +444,11 @@ export default function CuadrosWorkspace({ userId }: Props) {
                                       ? new Date(match.fecha_hora).toLocaleDateString() + ' ' + new Date(match.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                                       : 'Sin fecha'}
                                   </span>
-                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                  <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex gap-2">
                                     {match.estado === 'pendiente' && !playoffsGenerados && (
                                       <button className="text-[10px] text-blue-400 hover:text-blue-300" onClick={() => {
                                         setZonaScheduling({ zona, jugadores: jDeEstaZona })
-                                        setMatchForm({ id: match.id, p1: '', p2: '', fechaHora: match.fecha_hora ? match.fecha_hora.substring(0, 16) : '', sedeId: match.sede_id || '', fase: match.fase_bracket || 'Fase de Grupos' })
+                                        setMatchForm({ id: match.id, p1: match.participante_1_id, p2: match.participante_2_id, fechaHora: match.fecha_hora ? match.fecha_hora.substring(0, 16) : '', sedeId: match.sede_id || '', fase: match.fase_bracket || 'Fase de Grupos' })
                                         setIsModalOpen(true)
                                       }}>Editar</button>
                                     )}
@@ -474,6 +565,30 @@ export default function CuadrosWorkspace({ userId }: Props) {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* TOAST */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key="toast"
+            initial={{ opacity: 0, y: 24, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl border text-sm font-medium
+              ${
+                toast.type === 'success'
+                  ? 'bg-surface border-green-500/30 text-green-300'
+                  : 'bg-surface border-red-500/30 text-red-300'
+              }`}
+          >
+            {toast.type === 'success'
+              ? <CheckCircle2 size={18} className="text-green-400 shrink-0" />
+              : <AlertCircle size={18} className="text-red-400 shrink-0" />
+            }
+            {toast.msg}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

@@ -378,7 +378,8 @@ function TorneoContent() {
         .select(`
           id, estado, resultado, zona_id, fase_bracket, bracket_index, fecha_hora, ganador_id, categoria_id, siguiente_partido_id, posicion_siguiente_partido,
           p1:participantes!participante_1_id(id, nombre_mostrado),
-          p2:participantes!participante_2_id(id, nombre_mostrado)
+          p2:participantes!participante_2_id(id, nombre_mostrado),
+          sedes(nombre)
         `)
         .eq('torneo_id', torneoId)
 
@@ -649,13 +650,25 @@ function TorneoContent() {
                                       </span>
                                     </div>
                                     
-                                    <div className="text-right pl-3 shrink-0">
+                                    <div className="text-right pl-3 shrink-0 flex flex-col items-end gap-1">
                                       {m.estado === 'finalizado' ? (
                                         <span className="font-mono text-[11px] bg-surface px-1.5 py-0.5 border border-surface-border rounded text-slate-300">
                                           {formatResultStr(m)}
                                         </span>
                                       ) : (
-                                        <span className="text-[9px] uppercase font-bold text-amber-500/80 bg-amber-500/10 px-1.5 py-0.5 rounded">Pendiente</span>
+                                        <>
+                                          <span className="text-[9px] uppercase font-bold text-amber-500/80 bg-amber-500/10 px-1.5 py-0.5 rounded">Pendiente</span>
+                                          {m.fecha_hora && (
+                                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                              🕐 {new Date(m.fecha_hora).toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                          )}
+                                          {m.sedes?.nombre && (
+                                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                              📍 {m.sedes.nombre}
+                                            </span>
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   </div>
