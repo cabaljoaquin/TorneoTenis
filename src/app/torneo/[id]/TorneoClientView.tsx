@@ -58,6 +58,20 @@ function buildBracket(partidos: any[], configLlave?: any[]): any[] {
 
     // 2. Compute visual_index backward to align explicitly mapped asymmetric brackets
     const visualIndices = new Map<string, number>()
+    
+    // Auto-assign bracket_index if missing (e.g., from manual admin creation)
+    phasesToRender.forEach(fase => {
+      const matchesInFase = eliminatorios.filter(p => p.fase_bracket === fase)
+      let nextAvailableIdx = 0
+      matchesInFase.forEach(p => {
+         if (p.bracket_index == null) {
+           while (matchesInFase.some(m => m.bracket_index === nextAvailableIdx)) nextAvailableIdx++
+           p.bracket_index = nextAvailableIdx
+           nextAvailableIdx++
+         }
+      })
+    })
+
     eliminatorios.forEach(p => visualIndices.set(p.id, p.bracket_index))
 
     for (let i = phasesToRender.length - 1; i >= 0; i--) {
@@ -326,6 +340,7 @@ function TorneoContent() {
   const [configLlave, setConfigLlave] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
+  const [torneoFormato, setTorneoFormato] = useState<'grupos' | 'eliminatoria'>('grupos')
 
   const currentCatId = searchParams.get('cat') || categories[0]?.id
   const [fase, setFase] = useState<'zonas'|'eliminatorias'|'campeones'>('zonas')
@@ -334,11 +349,20 @@ function TorneoContent() {
 
   useEffect(() => {
     async function loadConfig() {
-      // Obtenemos listado de categorías activas con inscripciones de este torneo
+      const { data: tData } = await supabase
+        .from('torneos')
+        .select('formato')
+        .eq('id', torneoId)
+        .single()
+
+      if (tData?.formato === 'eliminatoria') {
+        setTorneoFormato('eliminatoria')
+        setFase('eliminatorias')
+      }
+
       const { data: dCat } = await supabase.from('categorias').select('id, nombre').order('nombre')
       if (dCat) setCategories(dCat.map(d => ({ id: d.id, name: d.nombre })))
-        
-      // Ultimos 5 finalizados de todo el torneo para el ticker top
+
       const { data: rMatches } = await supabase
         .from('partidos')
         .select(`
@@ -552,7 +576,9 @@ function TorneoContent() {
       <CategoryTabs categories={categories} onTabClick={handleTabClick} />
 
       <div className="flex justify-center gap-4 mt-6 mb-2">
-        <button onClick={() => startTransition(() => setFase('zonas'))} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'zonas' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Fase de Grupos</button>
+        {torneoFormato !== 'eliminatoria' && (
+          <button onClick={() => startTransition(() => setFase('zonas'))} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'zonas' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Fase de Grupos</button>
+        )}
         <button onClick={() => startTransition(() => setFase('eliminatorias'))} className={`text-xs font-semibold uppercase tracking-wider pb-2 border-b-2 transition-colors ${fase === 'eliminatorias' ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Eliminatorias</button>
       </div>
       
@@ -587,8 +613,8 @@ function TorneoContent() {
                   : <div className="text-slate-500 mt-10">Todavía no hay llaves configuradas para esta categoría.</div>
               )}
 
-              {/* VISTA DE ZONAS */}
-              {fase === 'zonas' && (
+              {/* VISTA DE ZONAS — solo para formato grupos */}
+              {fase === 'zonas' && torneoFormato !== 'eliminatoria' && (
                 zonas.length > 0 ? (
                   <div className="w-full grid md:grid-cols-2 gap-8">
                     {zonas.map(z => {

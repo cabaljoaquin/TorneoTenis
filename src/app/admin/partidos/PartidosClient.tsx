@@ -80,9 +80,6 @@ export default function PartidosClient({ userId }: Props) {
       `)
       // Filtramos solo partidos de torneos activos de este admin
       .in('torneo_id', filterTorneo !== 'all' ? [filterTorneo] : torneosIds)
-      // Solo mostramos partidos que tengan a ambos jugadores asignados
-      .not('participante_1_id', 'is', null)
-      .not('participante_2_id', 'is', null)
 
     if (tab === 'pendientes') {
       // Ordenamos primero por fase de grupos para que se jueguen primero, y luego eliminatorias, y fecha

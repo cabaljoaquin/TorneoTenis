@@ -112,11 +112,21 @@ export default function InscripcionesClient({ userId }: Props) {
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length >= 2) {
-        const { data } = await supabase
+        const torneoActivo = torneos.find(t => t.id === torneoActivoId)
+        const isDoble = torneoActivo?.modalidad === 'doble'
+
+        let query = supabase
           .from('participantes')
           .select('*')
           .ilike('nombre_mostrado', `%${searchQuery}%`)
-          .limit(5)
+
+        if (isDoble) {
+          query = query.ilike('nombre_mostrado', '% - %')
+        } else {
+          query = query.not('nombre_mostrado', 'ilike', '% - %')
+        }
+
+        const { data } = await query.limit(5)
         setParticipantesDb(data || [])
         setShowDropdown(true)
       } else {
@@ -125,7 +135,7 @@ export default function InscripcionesClient({ userId }: Props) {
       }
     }, 400)
     return () => clearTimeout(delayDebounceFn)
-  }, [searchQuery])
+  }, [searchQuery, torneoActivoId, torneos])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
