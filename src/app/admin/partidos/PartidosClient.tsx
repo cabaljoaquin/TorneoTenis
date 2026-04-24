@@ -2,7 +2,7 @@
 
 import { motion, Variants } from 'framer-motion'
 import { CheckCircle2, Clock, Trophy, Loader2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { parseTennisScore } from '@/utils/scoreParser'
 import { createClient } from '@/utils/supabase/client'
 
@@ -21,7 +21,7 @@ const itemVariants: Variants = {
 }
 
 export default function PartidosClient({ userId }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null)
@@ -120,9 +120,9 @@ export default function PartidosClient({ userId }: Props) {
   }
 
   useEffect(() => {
-    // Solo ejecutamos cuando torneosIds esté cargado (incluso si es array vacío)
     fetchMatches()
-  }, [tab, filterCat, filterFase, filterTorneo, torneosIds])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, filterCat, filterFase, filterTorneo, torneosIds.join(',')])
 
   const handleWinnerSelect = (matchId: string, participantId: string) => {
     setSelectedWinners(prev => ({ ...prev, [matchId]: participantId }))

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, UserPlus, Search, Loader2, AlertCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function InscripcionesClient({ userId }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [torneos, setTorneos] = useState<any[]>([])
   const [categorias, setCategorias] = useState<any[]>([])
@@ -81,8 +81,8 @@ export default function InscripcionesClient({ userId }: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const fetchInscriptos = async (tid: string) => {
-    setLoadingList(true)
+  const fetchInscriptos = async (tid: string, showLoader = true) => {
+    if (showLoader) setLoadingList(true)
     const { data } = await supabase
       .from('inscripciones')
       .select(`
@@ -93,20 +93,7 @@ export default function InscripcionesClient({ userId }: Props) {
       .eq('torneo_id', tid)
       .order('created_at', { ascending: false })
     if (data) setInscriptos(data)
-    setLoadingList(false)
-  }
-
-  const silentRefresh = async (tid: string) => {
-    const { data } = await supabase
-      .from('inscripciones')
-      .select(`
-        id, created_at,
-        participantes!inner(id, nombre, apellido, nombre_mostrado),
-        categorias!inner(id, nombre)
-      `)
-      .eq('torneo_id', tid)
-      .order('created_at', { ascending: false })
-    if (data) setInscriptos(data)
+    if (showLoader) setLoadingList(false)
   }
 
   useEffect(() => {
@@ -228,7 +215,7 @@ export default function InscripcionesClient({ userId }: Props) {
       setNuevoApellido2('')
       setTimeout(() => setFormMsg(null), 3500)
       // Silent background sync to get server-assigned data
-      silentRefresh(torneoActivoId)
+      fetchInscriptos(torneoActivoId, false)
     }
     setIsSubmitting(false)
   }
@@ -244,7 +231,7 @@ export default function InscripcionesClient({ userId }: Props) {
     if (error) {
       alert('Error al dar de baja: ' + error.message)
       // Revert on error
-      silentRefresh(torneoActivoId)
+      fetchInscriptos(torneoActivoId, false)
     }
   }
 

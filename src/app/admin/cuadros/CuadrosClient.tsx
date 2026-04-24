@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Users, Loader2, Calendar, AlertCircle, Zap, CheckCircle2, Swords, Trash2, Edit2, GitBranch } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function CuadrosWorkspace({ userId }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
 
   const [torneos, setTorneos] = useState<any[]>([])
@@ -144,8 +144,14 @@ export default function CuadrosWorkspace({ userId }: Props) {
     setLoading(false)
   }
 
-  const assignedSet = new Set(participantesZonificados.map(p => p.participante_id))
-  const jugadoresSueltos = inscripciones.filter(ins => !assignedSet.has(ins.participante_id))
+  const assignedSet = useMemo(
+    () => new Set(participantesZonificados.map(p => p.participante_id)),
+    [participantesZonificados]
+  )
+  const jugadoresSueltos = useMemo(
+    () => inscripciones.filter(ins => !assignedSet.has(ins.participante_id)),
+    [inscripciones, assignedSet]
+  )
 
   const handleCreateZona = async () => {
     if (!nuevaZonaName.trim()) return
@@ -233,10 +239,12 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
   }
 
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 4000)
-  }
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000)
+  }, [])
 
   const handleGenerarCruces = async () => {
     if (zonas.length === 0) return showToast('No hay zonas creadas para generar cruces.', 'error')

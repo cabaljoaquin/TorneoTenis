@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import {
@@ -63,7 +63,7 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function TorneosClient({ torneos: initialTorneos, userId }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const router   = useRouter()
   const { toasts, push } = useToast()
 

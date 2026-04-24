@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import CategoryTabs from '@/components/public/CategoryTabs'
 import TournamentBracket from '@/components/public/TournamentBracket'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState, useTransition } from 'react'
+import { Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import confetti from 'canvas-confetti'
 import { createClient } from '@/utils/supabase/client'
 import { calculateStandings } from '@/utils/standingsCalculator'
@@ -329,7 +329,7 @@ function TorneoContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const torneoId = params.id as string
   const [categories, setCategories] = useState<{id: string, name: string}[]>([])
@@ -349,35 +349,29 @@ function TorneoContent() {
 
   useEffect(() => {
     async function loadConfig() {
-      const { data: tData } = await supabase
-        .from('torneos')
-        .select('formato')
-        .eq('id', torneoId)
-        .single()
+      const [tResult, catResult, matchResult] = await Promise.all([
+        supabase.from('torneos').select('formato').eq('id', torneoId).single(),
+        supabase.from('categorias').select('id, nombre').order('nombre'),
+        supabase
+          .from('partidos')
+          .select(`id, resultado, ganador_id,
+            p1:participantes!participante_1_id(id, nombre_mostrado),
+            p2:participantes!participante_2_id(id, nombre_mostrado),
+            categorias(nombre)
+          `)
+          .eq('torneo_id', torneoId)
+          .eq('estado', 'finalizado')
+          .not('resultado', 'is', null)
+          .order('updated_at', { ascending: false, nullsFirst: false })
+          .limit(5)
+      ])
 
-      if (tData?.formato === 'eliminatoria') {
+      if (tResult.data?.formato === 'eliminatoria') {
         setTorneoFormato('eliminatoria')
         setFase('eliminatorias')
       }
-
-      const { data: dCat } = await supabase.from('categorias').select('id, nombre').order('nombre')
-      if (dCat) setCategories(dCat.map(d => ({ id: d.id, name: d.nombre })))
-
-      const { data: rMatches } = await supabase
-        .from('partidos')
-        .select(`
-          id, resultado, ganador_id,
-          p1:participantes!participante_1_id(id, nombre_mostrado),
-          p2:participantes!participante_2_id(id, nombre_mostrado),
-          categorias(nombre)
-        `)
-        .eq('torneo_id', torneoId)
-        .eq('estado', 'finalizado')
-        .not('resultado', 'is', null)
-        .order('updated_at', { ascending: false, nullsFirst: false })
-        .limit(5)
-      
-      if (rMatches) setRecentMatches(rMatches)
+      if (catResult.data) setCategories(catResult.data.map(d => ({ id: d.id, name: d.nombre })))
+      if (matchResult.data) setRecentMatches(matchResult.data)
     }
     loadConfig()
   }, [torneoId])
@@ -429,7 +423,7 @@ function TorneoContent() {
     loadCategoryData()
   }, [currentCatId, torneoId])
 
-  const roundData = buildBracket(matches, configLlave)
+  const roundData = useMemo(() => buildBracket(matches, configLlave), [matches, configLlave])
   const zonaMatchesLookup = matches.filter(m => m.zona_id && (!m.fase_bracket || m.fase_bracket === 'Fase de Grupos'))
 
   const finalMatch = matches.find(m => m.fase_bracket === 'Final' && m.estado === 'finalizado' && m.ganador_id && m.categoria_id === currentCatId)
@@ -443,35 +437,23 @@ function TorneoContent() {
   }, [fase, championName, hasShownChampion])
 
   useEffect(() => {
-    if (showChampionCard) {
-      const duration = 3500;
-      const end = Date.now() + duration;
+    if (!showChampionCard) return
+    const duration = 3500
+    const end = Date.now() + duration
+    let rafId: number
 
-      const frame = () => {
-        confetti({
-          particleCount: 5,
-          angle: 60,
-          spread: 60,
-          origin: { x: 0, y: 0.6 },
-          colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'],
-          zIndex: 1000
-        });
-        confetti({
-          particleCount: 5,
-          angle: 120,
-          spread: 60,
-          origin: { x: 1, y: 0.6 },
-          colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'],
-          zIndex: 1000
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      };
-      setTimeout(frame, 300);
+    const frame = () => {
+      confetti({ particleCount: 5, angle: 60, spread: 60, origin: { x: 0, y: 0.6 }, colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'], zIndex: 1000 })
+      confetti({ particleCount: 5, angle: 120, spread: 60, origin: { x: 1, y: 0.6 }, colors: ['#fbbf24', '#f59e0b', '#fb923c', '#eab308'], zIndex: 1000 })
+      if (Date.now() < end) rafId = requestAnimationFrame(frame)
     }
-  }, [showChampionCard]);
+    const timerId = setTimeout(() => { rafId = requestAnimationFrame(frame) }, 300)
+
+    return () => {
+      clearTimeout(timerId)
+      cancelAnimationFrame(rafId)
+    }
+  }, [showChampionCard])
 
   const handleTabClick = (catId: string) => {
     startTransition(() => {
