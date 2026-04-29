@@ -100,7 +100,14 @@ export default function PartidosClient({ userId }: Props) {
     const { data, error } = await query
 
     if (!error && data) {
-      setMatches(data)
+      const sorted = tab === 'pendientes'
+        ? [...data].sort((a, b) => {
+            const aScore = (a.p1 ? 1 : 0) + (a.p2 ? 1 : 0)
+            const bScore = (b.p1 ? 1 : 0) + (b.p2 ? 1 : 0)
+            return bScore - aScore
+          })
+        : data
+      setMatches(sorted)
       if (tab === 'finalizados') {
         const newInputs: Record<string, string> = {}
         const newStInputs: Record<string, string> = {}
@@ -144,18 +151,56 @@ export default function PartidosClient({ userId }: Props) {
 
     const stStr = stInputs[id]?.trim()
     if (stStr) {
-      const parts = stStr.split('-')
-      if (parts.length === 2) {
-        const p1 = parseInt(parts[0], 10)
-        const p2 = parseInt(parts[1], 10)
-        if (!isNaN(p1) && !isNaN(p2)) parsedSets.push({ p1, p2, isSuper: true })
+      let stP1: number | null = null
+      let stP2: number | null = null
+
+      if (stStr.includes('-')) {
+        const parts = stStr.split('-')
+        stP1 = parseInt(parts[0], 10)
+        stP2 = parseInt(parts[1], 10)
+      } else if (stStr.includes(' ')) {
+        const parts = stStr.split(' ')
+        stP1 = parseInt(parts[0], 10)
+        stP2 = parseInt(parts[1], 10)
+      } else if (stStr.length >= 2) {
+        const digits = stStr.replace(/\D/g, '')
+        if (digits.length === 3) {
+          if (parseInt(digits.slice(0, 2), 10) >= 10) {
+            stP1 = parseInt(digits.slice(0, 2), 10)
+            stP2 = parseInt(digits.slice(2), 10)
+          } else {
+            stP1 = parseInt(digits.slice(0, 1), 10)
+            stP2 = parseInt(digits.slice(1), 10)
+          }
+        } else if (digits.length === 4) {
+          stP1 = parseInt(digits.slice(0, 2), 10)
+          stP2 = parseInt(digits.slice(2), 10)
+        }
+      }
+
+      if (stP1 !== null && stP2 !== null && !isNaN(stP1) && !isNaN(stP2)) {
+        parsedSets.push({ p1: stP1, p2: stP2, isSuper: true })
+      } else {
+        return alert('Formato de Super Tiebreak inválido. Usá el formato 10-8 ó 10 8.')
       }
     }
 
-    setSavingMatchId(id)
-
-    // Buscamos si este partido apunta a un siguiente_partido_id
+    // El usuario siempre ingresa ganador primero. Si el ganador es P2, swapeamos
+    // p1/p2 en todos los sets (incluido STB) para que el DB siempre tenga P1/P2 real.
     const currentMatch = matches.find(m => m.id === id)
+    const winnerIsP2 = currentMatch && winnerId === currentMatch.p2?.id
+    if (winnerIsP2) {
+      parsedSets.forEach(set => {
+        const tmp = set.p1; set.p1 = set.p2; set.p2 = tmp
+        if (set.tb1 !== undefined) {
+          const tmpTb = set.tb1; set.tb1 = set.tb2; set.tb2 = tmpTb
+        }
+      })
+    }
+
+
+
+    setSavingMatchId(id)
 
     // 1. Update del partido actual
     const { error } = await supabase
@@ -206,11 +251,11 @@ export default function PartidosClient({ userId }: Props) {
           </h2>
           <p className="text-slate-400 text-sm mt-1">Seleccioná al ganador e ingresá la secuencia de números.</p>
         </div>
-        <div className="flex bg-surface-card border border-surface-border p-1 rounded-lg">
-          <button onClick={() => setTab('pendientes')} className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${tab === 'pendientes' ? 'bg-brand-500/20 text-brand-400' : 'text-slate-400 hover:text-slate-200'}`}>
+        <div className="flex w-full md:w-auto bg-surface-card border border-surface-border p-1 rounded-lg">
+          <button onClick={() => setTab('pendientes')} className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${tab === 'pendientes' ? 'bg-brand-500/20 text-brand-400' : 'text-slate-400 hover:text-slate-200'}`}>
             Pendientes
           </button>
-          <button onClick={() => setTab('finalizados')} className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${tab === 'finalizados' ? 'bg-brand-500/20 text-brand-400' : 'text-slate-400 hover:text-slate-200'}`}>
+          <button onClick={() => setTab('finalizados')} className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${tab === 'finalizados' ? 'bg-brand-500/20 text-brand-400' : 'text-slate-400 hover:text-slate-200'}`}>
             Historial / Editar
           </button>
         </div>
@@ -282,34 +327,32 @@ export default function PartidosClient({ userId }: Props) {
                 </div>
                 <div className={`flex flex-col gap-2 transition-opacity duration-300 ${selectedWinners[match.id] ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <label className="text-xs text-brand-400 font-medium text-center md:text-right">Resultado de los Sets</label>
-                  <div className="flex items-center gap-3 self-center md:self-end">
-                    <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 self-center md:self-end">
+                    <input
+                      type="text"
+                      placeholder="Ex: 6475"
+                      disabled={savingMatchId !== null || loading}
+                      value={inputs[match.id] || ''}
+                      onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
+                      onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
+                      className={`w-32 md:w-40 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-2 md:px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
+                    />
+                    <div className="relative">
                       <input
                         type="text"
-                        placeholder="Ex: 6475"
-                        disabled={savingMatchId !== null || loading}
-                        value={inputs[match.id] || ''}
-                        onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
-                        onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
-                        className={`w-32 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
-                      />
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="STB: 10-8"
+                          placeholder="Ej: 10-8"
                           disabled={savingMatchId !== null || loading}
                           value={stInputs[match.id] || ''}
                           onChange={e => setStInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
                           onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
-                          className={`w-32 border border-amber-500/30 rounded-lg outline-none px-4 py-1.5 text-xs text-amber-300 placeholder-amber-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-amber-900/10' : 'bg-amber-950/20'}`}
-                        />
-                        <span className="absolute -top-2 left-2 text-[9px] font-bold uppercase tracking-widest text-amber-500/70 bg-surface-card px-1">Super TB</span>
-                      </div>
+                          className={`w-24 md:w-28 rounded-lg outline-none px-1 md:px-3 py-2.5 text-xs text-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all text-center tracking-wider font-mono ${stInputs[match.id] ? 'border border-amber-500/30 bg-amber-950/20 placeholder-amber-700' : 'border border-dashed border-slate-600 bg-transparent placeholder-slate-700'} ${tab === 'finalizados' && stInputs[match.id] ? 'bg-amber-900/10' : ''}`}
+                      />
+                      <span className="absolute -top-2 left-2 text-[9px] font-bold uppercase tracking-widest text-amber-500/70 bg-surface-card px-1">STB</span>
                     </div>
                     <button
                       onClick={() => handleScoreSubmit(match.id)}
                       disabled={savingMatchId !== null || loading}
-                      className="p-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-all disabled:opacity-50"
+                      className="p-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-all disabled:opacity-50 flex-shrink-0"
                       title="Guardar partido"
                     >
                       {savingMatchId === match.id ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}

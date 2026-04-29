@@ -246,9 +246,19 @@ function formatResultStr(m: any) {
     else if (set.p2 > set.p1) s2++
   })
   
-  const isBackwards = 
+  let isBackwards = 
     (m.ganador_id === m.p2?.id && s1 > s2) ||
     (m.ganador_id === m.p1?.id && s2 > s1)
+
+  // Si los sets están empatados (ej: 1-1), usar el STB para detectar si está invertido
+  if (!isBackwards && s1 === s2) {
+    const stb = m.resultado.find((s: any) => s.isSuper)
+    if (stb) {
+      isBackwards =
+        (m.ganador_id === m.p2?.id && stb.p1 > stb.p2) ||
+        (m.ganador_id === m.p1?.id && stb.p2 > stb.p1)
+    }
+  }
 
   return m.resultado.map((s:any) => {
      if (s.isSuper) {
@@ -277,9 +287,19 @@ function formatResultArray(m: any) {
     else if (set.p2 > set.p1) s2++
   })
   
-  const isBackwards = 
+  let isBackwards = 
     (m.ganador_id === m.p2?.id && s1 > s2) ||
     (m.ganador_id === m.p1?.id && s2 > s1)
+
+  // Si los sets están empatados (ej: 1-1), usar el STB para detectar si está invertido
+  if (!isBackwards && s1 === s2) {
+    const stb = m.resultado.find((s: any) => s.isSuper)
+    if (stb) {
+      isBackwards =
+        (m.ganador_id === m.p2?.id && stb.p1 > stb.p2) ||
+        (m.ganador_id === m.p1?.id && stb.p2 > stb.p1)
+    }
+  }
 
   return m.resultado.map((s:any) => {
      if (s.isSuper) {
@@ -549,17 +569,19 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                         </div>
                         <div className={`flex gap-2.5 font-mono text-sm items-center ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
                           {sets.filter((s: any) => !s.isSuper).map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb1}</sup> : ''}</span>)}
-                          {sets.find((s: any) => s.isSuper) && (
-                            <span className="ml-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded whitespace-nowrap">
-                              STB {sets.find((s: any) => s.isSuper).s1}-{sets.find((s: any) => s.isSuper).s2}
-                            </span>
-                          )}
+                          {(() => { const st = sets.find((s: any) => s.isSuper); return st ? (
+                            <div className="flex flex-col items-center flex-shrink-0 -mt-2.5">
+                              <span className="text-[8px] font-bold tracking-wider text-amber-500 leading-none mb-0.5">STB</span>
+                              <span>{st.s1}</span>
+                            </div>
+                          ) : null })()}
                         </div>
                         <div className={`text-sm truncate ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`} title={m.p2?.nombre_mostrado}>
                           {m.p2?.nombre_mostrado} {isP2Winner && '🏆'}
                         </div>
                         <div className={`flex gap-2.5 font-mono text-sm ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
                           {sets.filter((s: any) => !s.isSuper).map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s2}{s.tb2 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb2}</sup> : ''}</span>)}
+                          {(() => { const st = sets.find((s: any) => s.isSuper); return st ? <span className="w-6 text-center flex-shrink-0">{st.s2}</span> : null })()}
                         </div>
                       </div>
                       <span className="text-[10px] text-slate-600 font-semibold mt-2">{m.categorias?.nombre}</span>
