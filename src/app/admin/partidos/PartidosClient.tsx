@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, Variants } from 'framer-motion'
-import { CheckCircle2, Clock, Trophy, Loader2 } from 'lucide-react'
+import { CheckCircle2, Clock, Trophy, Loader2, Search } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { parseTennisScore } from '@/utils/scoreParser'
 import { createClient } from '@/utils/supabase/client'
@@ -37,6 +37,7 @@ export default function PartidosClient({ userId }: Props) {
   const [filterCat, setFilterCat] = useState<string>('all')
   const [filterFase, setFilterFase] = useState<string>('all')
   const [filterTorneo, setFilterTorneo] = useState<string>('all')
+  const [searchTerm, setSearchTerm] = useState<string>('')
 
   // Cargamos los IDs de torneos del admin actual al montar
   useEffect(() => {
@@ -241,6 +242,14 @@ export default function PartidosClient({ userId }: Props) {
     setSavingMatchId(null)
   }
 
+  const filteredMatches = matches.filter(m => {
+    if (!searchTerm) return true
+    const term = searchTerm.toLowerCase()
+    const p1Name = m.p1?.nombre_mostrado?.toLowerCase() || ''
+    const p2Name = m.p2?.nombre_mostrado?.toLowerCase() || ''
+    return p1Name.includes(term) || p2Name.includes(term)
+  })
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -261,31 +270,43 @@ export default function PartidosClient({ userId }: Props) {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 mb-4">
-        <select value={filterTorneo} onChange={e => setFilterTorneo(e.target.value)} className="select-field">
-          <option value="all">Todos los Torneos</option>
-          {torneos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-        </select>
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field">
-          <option value="all">Todas las Categorías</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-        <select value={filterFase} onChange={e => setFilterFase(e.target.value)} className="select-field">
-          <option value="all">Todas las Fases</option>
-          <option value="grupos">Fase de Grupos</option>
-          <option value="eliminatorias">Eliminatorias</option>
-        </select>
+      <div className="flex flex-col gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <select value={filterTorneo} onChange={e => setFilterTorneo(e.target.value)} className="select-field">
+            <option value="all">Todos los Torneos</option>
+            {torneos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field">
+            <option value="all">Todas las Categorías</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <select value={filterFase} onChange={e => setFilterFase(e.target.value)} className="select-field">
+            <option value="all">Todas las Fases</option>
+            <option value="grupos">Fase de Grupos</option>
+            <option value="eliminatorias">Eliminatorias</option>
+          </select>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+          <input
+            type="text"
+            placeholder="Buscar por nombre de jugador..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="input-field w-full pl-10"
+          />
+        </div>
       </div>
 
       {loading && matches.length === 0 ? (
         <div className="flex justify-center p-8"><Loader2 className="animate-spin text-brand-500" /></div>
-      ) : matches.length === 0 ? (
+      ) : filteredMatches.length === 0 ? (
         <p className="text-slate-500 text-center py-8">
-          {torneosIds.length === 0 ? 'No tenés torneos registrados.' : 'No hay partidos en esta vista.'}
+          {torneosIds.length === 0 ? 'No tenés torneos registrados.' : 'No hay partidos en esta vista o que coincidan con la búsqueda.'}
         </p>
       ) : (
         <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid gap-4">
-          {matches.map((match) => {
+          {filteredMatches.map((match) => {
             const isP1Winner = selectedWinners[match.id] === match.p1?.id
             const isP2Winner = selectedWinners[match.id] === match.p2?.id
             return (
