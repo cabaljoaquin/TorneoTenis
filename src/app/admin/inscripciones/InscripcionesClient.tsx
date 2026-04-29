@@ -131,6 +131,7 @@ export default function InscripcionesClient({ userId }: Props) {
     setFormMsg(null)
 
     const torneoActivo = torneos.find(t => t.id === torneoActivoId)
+    const cap = (s: string) => s ? s.trim().charAt(0).toUpperCase() + s.trim().slice(1).toLowerCase() : ''
     const isDoble = torneoActivo?.modalidad === 'doble'
 
     let finalParticipanteId = selectedParticipante?.id
@@ -144,7 +145,9 @@ export default function InscripcionesClient({ userId }: Props) {
           setIsSubmitting(false)
           return
         }
-        const concatenatedName = `${nuevoApellido.trim()} - ${nuevoApellido2.trim()}`
+        const a1 = cap(nuevoApellido)
+        const a2 = cap(nuevoApellido2)
+        const concatenatedName = `${a1} - ${a2}`
         insertData = { nombre: '', apellido: concatenatedName, nombre_mostrado: concatenatedName }
       } else {
         if (!nuevoApellido) {
@@ -152,10 +155,12 @@ export default function InscripcionesClient({ userId }: Props) {
           setIsSubmitting(false)
           return
         }
-        const nombreMostradoGenerado = nuevoNombre
-          ? `${nuevoNombre.charAt(0).toUpperCase()}. ${nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)}`
-          : nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)
-        insertData = { nombre: nuevoNombre, apellido: nuevoApellido, nombre_mostrado: nombreMostradoGenerado }
+        const a1 = cap(nuevoApellido)
+        const n1 = nuevoNombre.trim() ? cap(nuevoNombre) : ''
+        const nombreMostradoGenerado = n1
+          ? `${n1.charAt(0).toUpperCase()}. ${a1}`
+          : a1
+        insertData = { nombre: n1, apellido: a1, nombre_mostrado: nombreMostradoGenerado }
       }
 
       const { data: newP, error: pError } = await supabase
@@ -187,12 +192,16 @@ export default function InscripcionesClient({ userId }: Props) {
       }
     } else {
       // Optimistic update: add immediately to list without flicker
+      const a1 = cap(nuevoApellido)
+      const a2 = cap(nuevoApellido2)
+      const n1 = nuevoNombre.trim() ? cap(nuevoNombre) : ''
+
       const nombreMostrado = selectedParticipante?.nombre_mostrado || (
         isDoble
-          ? `${nuevoApellido.trim()} - ${nuevoApellido2.trim()}`
-          : nuevoNombre
-            ? `${nuevoNombre.charAt(0).toUpperCase()}. ${nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)}`
-            : nuevoApellido.charAt(0).toUpperCase() + nuevoApellido.slice(1)
+          ? `${a1} - ${a2}`
+          : n1
+            ? `${n1.charAt(0).toUpperCase()}. ${a1}`
+            : a1
       )
       const optimisticEntry = {
         id: insData.id,

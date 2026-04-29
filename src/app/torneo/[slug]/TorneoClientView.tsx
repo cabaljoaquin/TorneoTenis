@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import CategoryTabs from '@/components/public/CategoryTabs'
 import TournamentBracket from '@/components/public/TournamentBracket'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import confetti from 'canvas-confetti'
 import { createClient } from '@/utils/supabase/client'
@@ -285,53 +285,41 @@ function formatResultArray(m: any) {
   })
 }
 
-function SkeletonZonas() {
+function ShimmerBar() {
   return (
-    <div className="w-full grid md:grid-cols-2 gap-8">
-      {[0, 1].map(i => (
-        <div key={i} className="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
-          <div className="h-10 bg-slate-800/60 animate-pulse" />
-          <div className="p-4 space-y-3">
-            {[0, 1, 2, 3].map(j => (
-              <div key={j} className="h-8 bg-slate-800/40 rounded animate-pulse" style={{ animationDelay: `${j * 80}ms` }} />
-            ))}
-          </div>
-          <div className="border-t border-surface-border p-4 space-y-2">
-            {[0, 1, 2].map(j => (
-              <div key={j} className="h-10 bg-slate-800/30 rounded animate-pulse" style={{ animationDelay: `${j * 60}ms` }} />
-            ))}
-          </div>
-        </div>
+    <div className="fixed top-0 left-0 right-0 z-[200] h-[2px] overflow-hidden">
+      <div
+        className="h-full w-1/3 rounded-full"
+        style={{
+          background: 'linear-gradient(90deg, transparent, #22c55e, #4ade80, #22c55e, transparent)',
+          animation: 'shimmer-slide 1.4s ease-in-out infinite',
+        }}
+      />
+    </div>
+  )
+}
+
+function PulseDots() {
+  return (
+    <div className="flex items-center justify-center gap-2 py-16">
+      {[0, 1, 2].map(i => (
+        <span
+          key={i}
+          className="w-2 h-2 rounded-full bg-brand-500"
+          style={{
+            animation: 'dot-bounce 1.2s ease-in-out infinite',
+            animationDelay: `${i * 0.2}s`,
+          }}
+        />
       ))}
     </div>
   )
 }
 
-function SkeletonBracket() {
-  return (
-    <div className="flex gap-12 py-8 px-4 overflow-hidden">
-      {[0, 1, 2].map(col => (
-        <div key={col} className="flex flex-col gap-8 min-w-[220px]">
-          <div className="h-5 w-24 mx-auto bg-slate-700/50 rounded animate-pulse" />
-          {Array.from({ length: 4 >> col }).map((_, j) => (
-            <div key={j} className="bg-surface-card border border-surface-border rounded-lg overflow-hidden animate-pulse" style={{ animationDelay: `${j * 100}ms` }}>
-              <div className="h-9 border-b border-surface-border/50 bg-slate-800/40" />
-              <div className="h-9 bg-slate-800/20" />
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function TorneoContent() {
-  const params = useParams()
+function TorneoContent({ torneoId }: { torneoId: string }) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-
-  const torneoId = params.id as string
   const [categories, setCategories] = useState<{id: string, name: string}[]>([])
 
   const [zonas, setZonas] = useState<any[]>([])
@@ -345,11 +333,11 @@ function TorneoContent() {
   const currentCatId = searchParams.get('cat') || categories[0]?.id
   const [fase, setFase] = useState<'zonas'|'eliminatorias'|'campeones'>('zonas')
   const [showChampionCard, setShowChampionCard] = useState(false)
-  const [hasShownChampion, setHasShownChampion] = useState(false)
+  const [shownChampionsCatIds, setShownChampionsCatIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     async function loadConfig() {
-      const [tResult, catResult, matchResult] = await Promise.all([
+      const [tResult, catResult, matchResult, inscripciones, zonas, partidos, configs] = await Promise.all([
         supabase.from('torneos').select('formato').eq('id', torneoId).single(),
         supabase.from('categorias').select('id, nombre').order('nombre'),
         supabase
@@ -363,14 +351,33 @@ function TorneoContent() {
           .eq('estado', 'finalizado')
           .not('resultado', 'is', null)
           .order('updated_at', { ascending: false, nullsFirst: false })
-          .limit(5)
+          .limit(5),
+        supabase.from('inscripciones').select('categoria_id').eq('torneo_id', torneoId),
+        supabase.from('zonas').select('categoria_id').eq('torneo_id', torneoId),
+        supabase.from('partidos').select('categoria_id').eq('torneo_id', torneoId),
+        supabase.from('configuracion_llave').select('categoria_id').eq('torneo_id', torneoId)
       ])
 
       if (tResult.data?.formato === 'eliminatoria') {
         setTorneoFormato('eliminatoria')
         setFase('eliminatorias')
       }
-      if (catResult.data) setCategories(catResult.data.map(d => ({ id: d.id, name: d.nombre })))
+
+      if (catResult.data) {
+        // Collect all category IDs that have at least some data in this tournament
+        const activeCatIds = new Set<string>()
+        inscripciones.data?.forEach(i => i.categoria_id && activeCatIds.add(i.categoria_id))
+        zonas.data?.forEach(z => z.categoria_id && activeCatIds.add(z.categoria_id))
+        partidos.data?.forEach(p => p.categoria_id && activeCatIds.add(p.categoria_id))
+        configs.data?.forEach(c => c.categoria_id && activeCatIds.add(c.categoria_id))
+
+        // Filter categories: keep only active ones
+        const activeCategories = catResult.data.filter(c => activeCatIds.has(c.id))
+        
+        // If there are no active categories, we can optionally show all or show nothing. 
+        // Showing only active ones as requested.
+        setCategories(activeCategories.map(d => ({ id: d.id, name: d.nombre })))
+      }
       if (matchResult.data) setRecentMatches(matchResult.data)
     }
     loadConfig()
@@ -430,11 +437,11 @@ function TorneoContent() {
   const championName = finalMatch ? (finalMatch.ganador_id === finalMatch.p1?.id ? finalMatch.p1?.nombre_mostrado : (finalMatch.ganador_id === finalMatch.p2?.id ? finalMatch.p2?.nombre_mostrado : null)) : null
 
   useEffect(() => {
-    if (fase === 'eliminatorias' && championName && !hasShownChampion) {
+    if (fase === 'eliminatorias' && championName && currentCatId && !shownChampionsCatIds.has(currentCatId)) {
        setShowChampionCard(true)
-       setHasShownChampion(true)
+       setShownChampionsCatIds(prev => new Set(prev).add(currentCatId))
     }
-  }, [fase, championName, hasShownChampion])
+  }, [fase, championName, currentCatId, shownChampionsCatIds])
 
   useEffect(() => {
     if (!showChampionCard) return
@@ -463,11 +470,10 @@ function TorneoContent() {
 
   if (categories.length === 0) {
     return (
-      <div className="w-full grid md:grid-cols-2 gap-8 px-4 py-8">
-        {[0, 1].map(i => (
-          <div key={i} className="h-48 bg-surface-card border border-surface-border rounded-xl animate-pulse" />
-        ))}
-      </div>
+      <>
+        <ShimmerBar />
+        <PulseDots />
+      </>
     )
   }
 
@@ -565,8 +571,9 @@ function TorneoContent() {
       </div>
       
       <div className="mt-6 px-4 min-h-[480px]">
+        {(loading || isPending) && <ShimmerBar />}
         {(loading || isPending) ? (
-          fase === 'eliminatorias' ? <SkeletonBracket /> : <SkeletonZonas />
+          <PulseDots />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -698,10 +705,10 @@ function TorneoContent() {
   )
 }
 
-export default function TorneoClientView() {
+export default function TorneoClientView({ torneoId }: { torneoId: string }) {
   return (
-    <Suspense fallback={<div className="h-40 flex items-center justify-center animate-pulse text-slate-500">Cargando escenario...</div>}>
-      <TorneoContent />
+    <Suspense fallback={<><ShimmerBar /><PulseDots /></>}>
+      <TorneoContent torneoId={torneoId} />
     </Suspense>
   )
 }

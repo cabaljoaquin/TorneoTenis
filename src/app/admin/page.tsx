@@ -35,7 +35,7 @@ export default async function AdminDashboardPage() {
       const [resIns, resCat, resPart] = await Promise.all([
         supabase.from('inscripciones').select('id', { count: 'exact', head: true }).eq('torneo_id', torneo.id),
         supabase.from('categorias').select('id', { count: 'exact', head: true }),
-        supabase.from('partidos').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+        supabase.from('partidos').select('id', { count: 'exact', head: true }).eq('torneo_id', torneo.id).eq('estado', 'pendiente'),
       ])
       stats = {
         inscriptos: resIns.count ?? 0,

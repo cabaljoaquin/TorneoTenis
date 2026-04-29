@@ -264,6 +264,9 @@ export default function CuadrosWorkspace({ userId }: Props) {
       })
     )
 
+    const torneoActual = torneos.find(t => t.id === torneoActivo)
+    const defaultSede = torneoActual?.sede_id || null
+
     const newMatches: any[] = []
 
     for (const zona of zonas) {
@@ -285,6 +288,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
               participante_2_id: p2,
               fase_bracket: 'Fase de Grupos',
               estado: 'pendiente',
+              sede_id: defaultSede,
             })
           }
         }

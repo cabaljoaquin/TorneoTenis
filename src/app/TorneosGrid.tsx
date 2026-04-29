@@ -7,6 +7,7 @@ import { Users, User, CalendarDays, Trophy, ArrowRight } from 'lucide-react'
 interface Torneo {
   id: string
   nombre: string
+  slug: string | null
   estado: string
   modalidad: string | null
   created_at: string
@@ -113,7 +114,7 @@ export function TorneosGrid({ torneos }: Props) {
 
           {/* CTA */}
           <Link
-            href={`/torneo/${t.id}`}
+            href={`/torneo/${t.slug || t.id}`}
             className="flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-xl transition-all duration-200 active:scale-95 group/btn"
           >
             Ver Cuadros / Resultados

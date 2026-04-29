@@ -11,6 +11,7 @@ import {
 interface Torneo {
   id: string
   nombre: string
+  slug: string | null
   estado: string
   modalidad: string | null
   formato: 'grupos' | 'eliminatoria' | null
@@ -20,6 +21,30 @@ interface Torneo {
   sede_id: string | null
   admin_id: string
   sedes?: { nombre: string } | null
+}
+
+function toSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
+
+async function generateUniqueSlug(supabase: any, base: string, excludeId?: string): Promise<string> {
+  const baseSlug = toSlug(base)
+  let candidate = baseSlug
+  let counter = 2
+  while (true) {
+    let query = supabase.from('torneos').select('id').eq('slug', candidate)
+    if (excludeId) query = query.neq('id', excludeId)
+    const { data } = await query.maybeSingle()
+    if (!data) return candidate
+    candidate = `${baseSlug}-${counter++}`
+  }
 }
 
 interface Props {
@@ -47,11 +72,10 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
       {toasts.map(t => (
         <div
           key={t.id}
-          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold shadow-xl animate-slide-in border ${
-            t.type === 'success'
+          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold shadow-xl animate-slide-in border ${t.type === 'success'
               ? 'bg-brand-600/90 border-brand-500/50 text-white'
               : 'bg-red-600/90 border-red-500/50 text-white'
-          }`}
+            }`}
         >
           {t.type === 'success' ? <CheckCheck size={15} /> : <X size={15} />}
           {t.msg}
@@ -64,7 +88,7 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function TorneosClient({ torneos: initialTorneos, userId }: Props) {
   const supabase = useMemo(() => createClient(), [])
-  const router   = useRouter()
+  const router = useRouter()
   const { toasts, push } = useToast()
 
   const [torneos, setTorneos] = useState<Torneo[]>(initialTorneos)
@@ -74,11 +98,13 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
 
   // ── Crear torneo ──
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [sedes, setSedes]       = useState<any[]>([])
-  const [sedeId, setSedeId]     = useState('')
-  const [nombre, setNombre]     = useState('')
+  const [sedes, setSedes] = useState<any[]>([])
+  const [sedeId, setSedeId] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [slugInput, setSlugInput] = useState('')
+  const [slugManual, setSlugManual] = useState(false)
   const [modalidad, setModalidad] = useState('single')
-  const [formato, setFormato]   = useState<'grupos' | 'eliminatoria'>('grupos')
+  const [formato, setFormato] = useState<'grupos' | 'eliminatoria'>('grupos')
   const [creating, setCreating] = useState(false)
   const [loadingSedes, setLoadingSedes] = useState(false)
 
@@ -96,12 +122,13 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
     e.preventDefault()
     if (!nombre.trim() || !userId) return
     setCreating(true)
+    const slug = await generateUniqueSlug(supabase, slugInput || nombre)
     const { error } = await supabase.from('torneos').insert({
-      nombre, sede_id: sedeId || null, estado: 'En curso',
+      nombre, slug, sede_id: sedeId || null, estado: 'En curso',
       admin_id: userId, modalidad, formato, visible: true,
     })
     if (!error) {
-      setNombre(''); setShowCreateModal(false)
+      setNombre(''); setSlugInput(''); setSlugManual(false); setShowCreateModal(false)
       push('Torneo creado con éxito')
       router.refresh()
     } else {
@@ -112,16 +139,18 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
 
   // ── Editar torneo ──
   const [editTorneo, setEditTorneo] = useState<Torneo | null>(null)
-  const [editNombre, setEditNombre]         = useState('')
-  const [editModalidad, setEditModalidad]   = useState('single')
-  const [editFormato, setEditFormato]       = useState<'grupos' | 'eliminatoria'>('grupos')
-  const [editSedeId, setEditSedeId]         = useState('')
-  const [editFecha, setEditFecha]           = useState('')
-  const [saving, setSaving]                 = useState(false)
+  const [editNombre, setEditNombre] = useState('')
+  const [editSlug, setEditSlug] = useState('')
+  const [editModalidad, setEditModalidad] = useState('single')
+  const [editFormato, setEditFormato] = useState<'grupos' | 'eliminatoria'>('grupos')
+  const [editSedeId, setEditSedeId] = useState('')
+  const [editFecha, setEditFecha] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const openEdit = async (t: Torneo) => {
     setEditTorneo(t)
     setEditNombre(t.nombre)
+    setEditSlug(t.slug ?? toSlug(t.nombre))
     setEditModalidad(t.modalidad ?? 'single')
     setEditFormato(t.formato ?? 'grupos')
     setEditSedeId(t.sede_id ?? '')
@@ -136,8 +165,11 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
     e.preventDefault()
     if (!editTorneo || !editNombre.trim()) return
     setSaving(true)
+    const slugBase = editSlug.trim() || editNombre
+    const slug = await generateUniqueSlug(supabase, slugBase, editTorneo.id)
     const { error } = await supabase.from('torneos').update({
       nombre: editNombre,
+      slug,
       modalidad: editModalidad,
       formato: editFormato,
       sede_id: editSedeId || null,
@@ -147,7 +179,7 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
     if (!error) {
       setTorneos(prev => prev.map(t =>
         t.id === editTorneo.id
-          ? { ...t, nombre: editNombre, modalidad: editModalidad, formato: editFormato, sede_id: editSedeId || null, fecha_inicio: editFecha || null }
+          ? { ...t, nombre: editNombre, slug, modalidad: editModalidad, formato: editFormato, sede_id: editSedeId || null, fecha_inicio: editFecha || null }
           : t
       ))
       push('Cambios guardados')
@@ -237,11 +269,10 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                         : 'Sin fecha'}
                     </span>
                     <span className="capitalize opacity-70">{t.modalidad ?? 'single'}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      t.formato === 'eliminatoria'
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${t.formato === 'eliminatoria'
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25'
                         : 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
-                    }`}>
+                      }`}>
                       {t.formato === 'eliminatoria' ? '⚡ Eliminación Directa' : '🏆 Fase de Grupos'}
                     </span>
                   </div>
@@ -256,11 +287,10 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                   onClick={() => toggleVisible(t.id, t.visible)}
                   disabled={togglingVisId === t.id}
                   title={t.visible ? 'Ocultar del público' : 'Publicar'}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold transition-all sm:border disabled:opacity-50 ${
-                    t.visible
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold transition-all sm:border disabled:opacity-50 ${t.visible
                       ? 'text-sky-400 sm:bg-sky-500/10 sm:border-sky-500/20 sm:hover:bg-sky-500/20'
                       : 'text-slate-500 sm:bg-slate-800 sm:border-slate-700 sm:hover:text-slate-300'
-                  }`}
+                    }`}
                 >
                   {togglingVisId === t.id
                     ? <Loader2 size={14} className="animate-spin" />
@@ -273,11 +303,10 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                 <button
                   onClick={() => toggleEstado(t.id, t.estado)}
                   disabled={togglingId === t.id}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold uppercase tracking-wider transition-all sm:border disabled:opacity-50 ${
-                    t.estado === 'En curso'
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 py-3 sm:py-1.5 sm:px-3 sm:rounded-full text-xs font-semibold uppercase tracking-wider transition-all sm:border disabled:opacity-50 ${t.estado === 'En curso'
                       ? 'text-brand-400 sm:bg-brand-500/10 sm:border-brand-500/20 sm:hover:bg-brand-500/20'
                       : 'text-slate-500 sm:bg-slate-800 sm:border-slate-700 sm:hover:text-slate-300'
-                  }`}
+                    }`}
                 >
                   {togglingId === t.id
                     ? <Loader2 size={14} className="animate-spin" />
@@ -321,7 +350,19 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Nombre del Evento</label>
                 <input type="text" autoFocus placeholder="Ej: Copa de Verano 2025"
-                  className="input-field" value={nombre} onChange={e => setNombre(e.target.value)} />
+                  className="input-field" value={nombre}
+                  onChange={e => { setNombre(e.target.value); if (!slugManual) setSlugInput(toSlug(e.target.value)) }} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">URL del Torneo</label>
+                <div className="flex items-center gap-0 rounded-xl border border-surface-border bg-surface overflow-hidden focus-within:border-brand-500 transition-colors">
+                  <span className="px-3 py-2.5 text-xs text-slate-500 bg-surface-card border-r border-surface-border shrink-0">/torneo/</span>
+                  <input type="text" placeholder="copa-de-verano-2025"
+                    className="flex-1 bg-transparent px-3 py-2.5 text-sm text-slate-200 outline-none"
+                    value={slugInput}
+                    onChange={e => { setSlugManual(true); setSlugInput(toSlug(e.target.value)) }} />
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">Se genera automáticamente. Podés editarlo.</p>
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Modalidad</label>
@@ -340,14 +381,13 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Formato del Torneo</label>
                 <div className="grid grid-cols-2 gap-2">
                   {([
-                    { value: 'grupos', label: '🏆 Fase de Grupos', desc: 'Round Robin + Eliminatorias' },
-                    { value: 'eliminatoria', label: '⚡ Eliminación Directa', desc: 'Knockout puro' },
+                    { value: 'grupos', label: '🏆 Fase de Grupos', desc: 'Fase de zonas + Eliminatorias' },
+                    { value: 'eliminatoria', label: '⚡ Eliminación Directa', desc: '' },
                   ] as const).map(opt => (
-                    <label key={opt.value} className={`flex flex-col gap-0.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                      formato === opt.value
+                    <label key={opt.value} className={`flex flex-col gap-0.5 p-3 rounded-xl border cursor-pointer transition-all ${formato === opt.value
                         ? 'border-brand-500 bg-brand-500/10 text-brand-300'
                         : 'border-surface-border bg-surface hover:border-slate-600 text-slate-400'
-                    }`}>
+                      }`}>
                       <input type="radio" name="formato-crear" value={opt.value}
                         checked={formato === opt.value} onChange={e => setFormato(e.target.value as 'grupos' | 'eliminatoria')}
                         className="sr-only" />
@@ -400,6 +440,17 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                   value={editNombre} onChange={e => setEditNombre(e.target.value)} />
               </div>
               <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">URL del Torneo (Slug)</label>
+                <div className="flex items-center gap-0 rounded-xl border border-surface-border bg-surface overflow-hidden focus-within:border-brand-500 transition-colors">
+                  <span className="px-3 py-2.5 text-xs text-slate-500 bg-surface-card border-r border-surface-border shrink-0">/torneo/</span>
+                  <input type="text"
+                    className="flex-1 bg-transparent px-3 py-2.5 text-sm text-slate-200 outline-none"
+                    value={editSlug}
+                    onChange={e => setEditSlug(toSlug(e.target.value))} />
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">Cambiar el slug puede romper links externos existentes.</p>
+              </div>
+              <div>
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Modalidad</label>
                 <div className="flex gap-4 p-1">
                   {['single', 'doble'].map(m => (
@@ -419,11 +470,10 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                     { value: 'grupos', label: '🏆 Fase de Grupos', desc: 'Round Robin + Eliminatorias' },
                     { value: 'eliminatoria', label: '⚡ Eliminación Directa', desc: 'Knockout puro' },
                   ] as const).map(opt => (
-                    <label key={opt.value} className={`flex flex-col gap-0.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                      editFormato === opt.value
+                    <label key={opt.value} className={`flex flex-col gap-0.5 p-3 rounded-xl border cursor-pointer transition-all ${editFormato === opt.value
                         ? 'border-brand-500 bg-brand-500/10 text-brand-300'
                         : 'border-surface-border bg-surface hover:border-slate-600 text-slate-400'
-                    }`}>
+                      }`}>
                       <input type="radio" name="formato-editar" value={opt.value}
                         checked={editFormato === opt.value} onChange={e => setEditFormato(e.target.value as 'grupos' | 'eliminatoria')}
                         className="sr-only" />

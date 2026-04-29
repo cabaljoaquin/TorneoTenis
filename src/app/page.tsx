@@ -14,7 +14,7 @@ export default async function PublicHomePage() {
 
   const { data: torneos } = await supabase
     .from('torneos')
-    .select('id, nombre, estado, modalidad, created_at, fecha_inicio, sedes(nombre)')
+    .select('id, nombre, slug, estado, modalidad, created_at, fecha_inicio, sedes(nombre)')
     .eq('visible', true)
     .order('created_at', { ascending: false })
     .limit(9)
