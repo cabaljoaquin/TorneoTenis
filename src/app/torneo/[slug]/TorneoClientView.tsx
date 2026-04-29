@@ -241,6 +241,7 @@ function formatResultStr(m: any) {
   
   let s1 = 0, s2 = 0
   m.resultado.forEach((set: any) => {
+    if (set.isSuper) return
     if (set.p1 > set.p2) s1++
     else if (set.p2 > set.p1) s2++
   })
@@ -250,6 +251,11 @@ function formatResultStr(m: any) {
     (m.ganador_id === m.p1?.id && s2 > s1)
 
   return m.resultado.map((s:any) => {
+     if (s.isSuper) {
+       const sp1 = isBackwards ? s.p2 : s.p1
+       const sp2 = isBackwards ? s.p1 : s.p2
+       return `STB ${sp1}-${sp2}`
+     }
      let tp1 = s.p1; let tp2 = s.p2;
      let tb1 = s.tb1; let tb2 = s.tb2;
      if (isBackwards) {
@@ -266,6 +272,7 @@ function formatResultArray(m: any) {
   
   let s1 = 0, s2 = 0
   m.resultado.forEach((set: any) => {
+    if (set.isSuper) return
     if (set.p1 > set.p2) s1++
     else if (set.p2 > set.p1) s2++
   })
@@ -275,6 +282,9 @@ function formatResultArray(m: any) {
     (m.ganador_id === m.p1?.id && s2 > s1)
 
   return m.resultado.map((s:any) => {
+     if (s.isSuper) {
+       return { s1: isBackwards ? s.p2 : s.p1, s2: isBackwards ? s.p1 : s.p2, isSuper: true }
+     }
      let tp1 = s.p1; let tp2 = s.p2;
      let tb1 = s.tb1; let tb2 = s.tb2;
      if (isBackwards) {
@@ -292,7 +302,7 @@ function ShimmerBar() {
         className="h-full w-1/3 rounded-full"
         style={{
           background: 'linear-gradient(90deg, transparent, #22c55e, #4ade80, #22c55e, transparent)',
-          animation: 'shimmer-slide 1.4s ease-in-out infinite',
+          animation: 'shimmer-slide 2.8s ease-in-out infinite',
         }}
       />
     </div>
@@ -537,15 +547,19 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                         <div className={`text-sm truncate ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`} title={m.p1?.nombre_mostrado}>
                           {m.p1?.nombre_mostrado} {isP1Winner && '🏆'}
                         </div>
-                        <div className={`flex gap-2.5 font-mono text-sm ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
-                          {sets.map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb1}</sup> : ''}</span>)}
+                        <div className={`flex gap-2.5 font-mono text-sm items-center ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
+                          {sets.filter((s: any) => !s.isSuper).map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb1}</sup> : ''}</span>)}
+                          {sets.find((s: any) => s.isSuper) && (
+                            <span className="ml-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded whitespace-nowrap">
+                              STB {sets.find((s: any) => s.isSuper).s1}-{sets.find((s: any) => s.isSuper).s2}
+                            </span>
+                          )}
                         </div>
-                        
                         <div className={`text-sm truncate ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`} title={m.p2?.nombre_mostrado}>
                           {m.p2?.nombre_mostrado} {isP2Winner && '🏆'}
                         </div>
                         <div className={`flex gap-2.5 font-mono text-sm ${isP2Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
-                          {sets.map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s2}{s.tb2 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb2}</sup> : ''}</span>)}
+                          {sets.filter((s: any) => !s.isSuper).map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s2}{s.tb2 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb2}</sup> : ''}</span>)}
                         </div>
                       </div>
                       <span className="text-[10px] text-slate-600 font-semibold mt-2">{m.categorias?.nombre}</span>

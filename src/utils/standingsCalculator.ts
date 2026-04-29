@@ -40,6 +40,7 @@ export function calculateStandings(
     if (match.resultado && Array.isArray(match.resultado)) {
       let s1 = 0, s2 = 0
       match.resultado.forEach((set: any) => {
+        if (set.isSuper) return
         if (set.p1 > set.p2) s1++
         else if (set.p2 > set.p1) s2++
       })

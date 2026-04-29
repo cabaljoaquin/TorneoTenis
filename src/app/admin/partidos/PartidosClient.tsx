@@ -30,6 +30,7 @@ export default function PartidosClient({ userId }: Props) {
 
   const [selectedWinners, setSelectedWinners] = useState<Record<string, string>>({})
   const [inputs, setInputs] = useState<Record<string, string>>({})
+  const [stInputs, setStInputs] = useState<Record<string, string>>({})
   const [tab, setTab] = useState<'pendientes' | 'finalizados'>('pendientes')
   
   const [categories, setCategories] = useState<{id: string, nombre: string}[]>([])
@@ -102,14 +103,19 @@ export default function PartidosClient({ userId }: Props) {
       setMatches(data)
       if (tab === 'finalizados') {
         const newInputs: Record<string, string> = {}
+        const newStInputs: Record<string, string> = {}
         const newWinners: Record<string, string> = {}
         data.forEach(m => {
           if (m.ganador_id) newWinners[m.id] = m.ganador_id
           if (m.resultado && Array.isArray(m.resultado)) {
-            newInputs[m.id] = m.resultado.map((s: any) => s.tb1 !== undefined ? `${s.p1}${s.p2}${s.tb1}${s.tb2}` : `${s.p1}${s.p2}`).join('')
+            const normalSets = m.resultado.filter((s: any) => !s.isSuper)
+            const superSet = m.resultado.find((s: any) => s.isSuper)
+            newInputs[m.id] = normalSets.map((s: any) => s.tb1 !== undefined ? `${s.p1}${s.p2}${s.tb1}${s.tb2}` : `${s.p1}${s.p2}`).join('')
+            if (superSet) newStInputs[m.id] = `${superSet.p1}-${superSet.p2}`
           }
         })
         setInputs(newInputs)
+        setStInputs(newStInputs)
         setSelectedWinners(newWinners)
       } else {
         setInputs({})
@@ -135,6 +141,16 @@ export default function PartidosClient({ userId }: Props) {
     if (!scoreStr) return alert('Debes ingresar el resultado numérico (Ej: 6475).')
     const parsedSets = parseTennisScore(scoreStr)
     if (parsedSets.length === 0) return alert('Formato de resultado inválido.')
+
+    const stStr = stInputs[id]?.trim()
+    if (stStr) {
+      const parts = stStr.split('-')
+      if (parts.length === 2) {
+        const p1 = parseInt(parts[0], 10)
+        const p2 = parseInt(parts[1], 10)
+        if (!isNaN(p1) && !isNaN(p2)) parsedSets.push({ p1, p2, isSuper: true })
+      }
+    }
 
     setSavingMatchId(id)
 
@@ -175,6 +191,7 @@ export default function PartidosClient({ userId }: Props) {
 
     setSelectedWinners(prev => { const n = { ...prev }; delete n[id]; return n })
     setInputs(prev => { const n = { ...prev }; delete n[id]; return n })
+    setStInputs(prev => { const n = { ...prev }; delete n[id]; return n })
     await fetchMatches()
     setSavingMatchId(null)
   }
@@ -266,15 +283,29 @@ export default function PartidosClient({ userId }: Props) {
                 <div className={`flex flex-col gap-2 transition-opacity duration-300 ${selectedWinners[match.id] ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <label className="text-xs text-brand-400 font-medium text-center md:text-right">Resultado de los Sets</label>
                   <div className="flex items-center gap-3 self-center md:self-end">
-                    <input
-                      type="text"
-                      placeholder="Ex: 6475"
-                      disabled={savingMatchId !== null || loading}
-                      value={inputs[match.id] || ''}
-                      onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
-                      onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
-                      className={`w-32 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
-                    />
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="Ex: 6475"
+                        disabled={savingMatchId !== null || loading}
+                        value={inputs[match.id] || ''}
+                        onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
+                        className={`w-32 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
+                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="STB: 10-8"
+                          disabled={savingMatchId !== null || loading}
+                          value={stInputs[match.id] || ''}
+                          onChange={e => setStInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
+                          onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
+                          className={`w-32 border border-amber-500/30 rounded-lg outline-none px-4 py-1.5 text-xs text-amber-300 placeholder-amber-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-amber-900/10' : 'bg-amber-950/20'}`}
+                        />
+                        <span className="absolute -top-2 left-2 text-[9px] font-bold uppercase tracking-widest text-amber-500/70 bg-surface-card px-1">Super TB</span>
+                      </div>
+                    </div>
                     <button
                       onClick={() => handleScoreSubmit(match.id)}
                       disabled={savingMatchId !== null || loading}
