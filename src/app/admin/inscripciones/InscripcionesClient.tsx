@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle2, UserPlus, Search, Loader2, AlertCircle } from 'lucide-react'
+import { CheckCircle2, UserPlus, Search, Loader2, AlertCircle, Users, UserPlus2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 interface Props {
@@ -35,6 +35,11 @@ export default function InscripcionesClient({ userId }: Props) {
   const [formMsg, setFormMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
+  
+  // Tab state for mobile responsiveness
+  const [mobileTab, setMobileTab] = useState<'lista' | 'nuevo'>('nuevo')
+  
+  const [filterInscriptos, setFilterInscriptos] = useState('')
 
   useEffect(() => {
     if (!userId) return
@@ -246,21 +251,49 @@ export default function InscripcionesClient({ userId }: Props) {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-12">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <UserPlus className="text-brand-500" />
-          Inscripciones
-        </h2>
-        <p className="text-slate-400 text-sm mt-1">
-          Buscá jugadores del club o dálos de alta para competir en el torneo actual.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+            <UserPlus className="text-brand-500" />
+            Inscripciones
+          </h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Buscá jugadores del club o dálos de alta para competir en el torneo actual.
+          </p>
+        </div>
+        
+        {/* MOBILE TABS */}
+        <div className="lg:hidden flex bg-surface border border-surface-border p-1 rounded-lg w-full md:w-auto mt-4">
+          <button
+            onClick={() => setMobileTab('lista')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 text-sm font-semibold rounded-md transition-all ${
+              mobileTab === 'lista' 
+                ? 'bg-surface-card text-brand-400 shadow-sm border border-surface-border' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users size={16} />
+            Inscriptos ({inscriptos.length})
+          </button>
+          <button
+            onClick={() => setMobileTab('nuevo')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 text-sm font-semibold rounded-md transition-all ${
+              mobileTab === 'nuevo' 
+                ? 'bg-surface-card text-brand-400 shadow-sm border border-surface-border' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <UserPlus2 size={16} />
+            Inscripción
+          </button>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-[1fr_1.5fr] gap-8 transform-gpu">
 
         {/* COLUMNA IZQUIERDA: FORMULARIO */}
-        <div className="bg-surface-card border border-surface-border rounded-xl p-5 shadow-lg h-fit sticky top-24">
-          <h3 className="font-semibold text-brand-400 mb-5 pb-2 border-b border-surface-border/50">Formulario de Fichaje</h3>
+        <div className={`${mobileTab === 'nuevo' ? 'block' : 'hidden'} lg:block bg-surface-card border border-surface-border rounded-xl p-5 shadow-lg h-fit sticky top-24`}>
+          <h3 className="font-semibold text-brand-400 mb-5 pb-2 border-b border-surface-border/50">Inscripción</h3>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Torneo Activo */}
@@ -292,7 +325,7 @@ export default function InscripcionesClient({ userId }: Props) {
 
             {/* Ficha Jugador */}
             <div className="pt-2">
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Jugador / Equipo</label>
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Jugador</label>
 
               {(() => {
                 const isDoble = torneos.find(t => t.id === torneoActivoId)?.modalidad === 'doble'
@@ -393,69 +426,101 @@ export default function InscripcionesClient({ userId }: Props) {
         </div>
 
         {/* COLUMNA DERECHA: GRILLA DE INSCRIPTOS */}
-        <div>
-          <div className="flex items-start justify-between mb-4 px-1 gap-4 flex-wrap">
-            <h3 className="font-semibold text-slate-200">Jugadores Registrados</h3>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              {(() => {
-                const catCounts: Record<string, { nombre: string; count: number }> = {}
-                inscriptos.forEach(ins => {
-                  const catId = ins.categorias?.id
-                  const catNombre = ins.categorias?.nombre
-                  if (!catId) return
-                  if (!catCounts[catId]) catCounts[catId] = { nombre: catNombre, count: 0 }
-                  catCounts[catId].count++
-                })
-                return Object.values(catCounts)
-                  .filter(c => c.count > 0)
-                  .sort((a, b) => b.count - a.count)
-                  .map(c => (
-                    <span key={c.nombre} className="text-xs font-semibold text-slate-400 bg-surface-card border border-surface-border px-2.5 py-1 rounded-full">
-                      {c.nombre}: <span className="text-slate-200">{c.count}</span>
-                    </span>
-                  ))
-              })()}
-              <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2.5 py-1 rounded-full">Total: {inscriptos.length}</span>
+        <div className={`${mobileTab === 'lista' ? 'block' : 'hidden'} lg:block`}>
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-start justify-between px-1 gap-4 flex-wrap">
+              <h3 className="font-semibold text-slate-200">Jugadores Registrados</h3>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {(() => {
+                  const catCounts: Record<string, { nombre: string; count: number }> = {}
+                  inscriptos.forEach(ins => {
+                    const catId = ins.categorias?.id
+                    const catNombre = ins.categorias?.nombre
+                    if (!catId) return
+                    if (!catCounts[catId]) catCounts[catId] = { nombre: catNombre, count: 0 }
+                    catCounts[catId].count++
+                  })
+                  return Object.values(catCounts)
+                    .filter(c => c.count > 0)
+                    .sort((a, b) => b.count - a.count)
+                    .map(c => (
+                      <span key={c.nombre} className="text-xs font-semibold text-slate-400 bg-surface-card border border-surface-border px-2.5 py-1 rounded-full">
+                        {c.nombre}: <span className="text-slate-200">{c.count}</span>
+                      </span>
+                    ))
+                })()}
+                <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2.5 py-1 rounded-full">Total: {inscriptos.length}</span>
+              </div>
             </div>
+
+            {inscriptos.length > 0 && (
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Buscar en inscriptos..."
+                  value={filterInscriptos}
+                  onChange={e => setFilterInscriptos(e.target.value)}
+                  className="input-field pl-10 bg-surface border-surface-border"
+                />
+              </div>
+            )}
           </div>
 
-          {loadingList ? (
-            <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-500" /></div>
-          ) : inscriptos.length === 0 ? (
-            <div className="bg-surface-card border border-surface-border border-dashed rounded-xl p-12 text-center text-slate-500">
-              <p>Todavía no hay jugadores en este torneo.</p>
-              <p className="text-xs mt-1">Utilizá el formulario para dar la primera alta.</p>
-            </div>
-          ) : (
-            <motion.div
-              initial="hidden" animate="show"
-              variants={{ show: { transition: { staggerChildren: 0.08 } } }}
-              className="grid sm:grid-cols-2 gap-3"
-            >
-              {inscriptos.map(ins => (
-                <motion.div
-                  key={ins.id}
-                  variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
-                  className="bg-surface-card border border-surface-border hover:border-surface-border/80 rounded-lg p-3.5 flex items-center gap-4 transition-colors"
-                >
-                  <div className="w-10 h-10 rounded-full bg-surface border border-surface-border flex items-center justify-center text-brand-400 font-bold uppercase shrink-0">
-                    {ins.participantes.nombre?.charAt(0) || ins.participantes.nombre_mostrado.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-200 truncate">{ins.participantes.nombre_mostrado}</p>
-                    <p className="text-xs text-slate-500 truncate">{ins.categorias.nombre}</p>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveInscripcion(ins.id, ins.participante_id || ins.participantes.id, ins.participantes.nombre_mostrado)}
-                    className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors ml-2 shrink-0"
-                    title="Dar de baja del torneo"
+          {(() => {
+            const listFiltered = filterInscriptos.trim() 
+              ? inscriptos.filter(ins => ins.participantes.nombre_mostrado.toLowerCase().includes(filterInscriptos.toLowerCase()))
+              : inscriptos;
+
+            if (loadingList) {
+              return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-500" /></div>
+            }
+
+            if (listFiltered.length === 0) {
+              return (
+                <div className="bg-surface-card border border-surface-border border-dashed rounded-xl p-12 text-center text-slate-500">
+                  {filterInscriptos.trim() 
+                    ? <p>No se encontraron jugadores que coincidan con la búsqueda.</p>
+                    : <>
+                        <p>Todavía no hay jugadores en este torneo.</p>
+                        <p className="text-xs mt-1">Utilizá el formulario para dar la primera alta.</p>
+                      </>
+                  }
+                </div>
+              )
+            }
+
+            return (
+              <motion.div
+                initial="hidden" animate="show"
+                variants={{ show: { transition: { staggerChildren: 0.08 } } }}
+                className="grid sm:grid-cols-2 gap-3"
+              >
+                {listFiltered.map(ins => (
+                  <motion.div
+                    key={ins.id}
+                    variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
+                    className="bg-surface-card border border-surface-border hover:border-surface-border/80 rounded-lg p-3.5 flex items-center gap-4 transition-colors"
                   >
-                    ×
-                  </button>
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
+                    <div className="w-10 h-10 rounded-full bg-surface border border-surface-border flex items-center justify-center text-brand-400 font-bold uppercase shrink-0">
+                      {ins.participantes.nombre?.charAt(0) || ins.participantes.nombre_mostrado.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-200 truncate">{ins.participantes.nombre_mostrado}</p>
+                      <p className="text-xs text-slate-500 truncate">{ins.categorias.nombre}</p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveInscripcion(ins.id, ins.participante_id || ins.participantes.id, ins.participantes.nombre_mostrado)}
+                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors ml-2 shrink-0"
+                      title="Dar de baja del torneo"
+                    >
+                      ×
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )
+          })()}
         </div>
       </div>
     </div>
