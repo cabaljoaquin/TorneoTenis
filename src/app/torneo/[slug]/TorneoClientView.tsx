@@ -394,18 +394,16 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
       }
 
       if (catResult.data) {
-        // Collect all category IDs that have at least some data in this tournament
+        // Collect all category IDs that have at least some data (zonas, partidos, or llave configurations)
         const activeCatIds = new Set<string>()
-        inscripciones.data?.forEach(i => i.categoria_id && activeCatIds.add(i.categoria_id))
         zonas.data?.forEach(z => z.categoria_id && activeCatIds.add(z.categoria_id))
         partidos.data?.forEach(p => p.categoria_id && activeCatIds.add(p.categoria_id))
         configs.data?.forEach(c => c.categoria_id && activeCatIds.add(c.categoria_id))
 
-        // Filter categories: keep only active ones
+        // Filter categories: keep only active ones that have actual tournament structure
         const activeCategories = catResult.data.filter(c => activeCatIds.has(c.id))
         
-        // If there are no active categories, we can optionally show all or show nothing. 
-        // Showing only active ones as requested.
+        // Showing only categories with generated groups or brackets
         setCategories(activeCategories.map(d => ({ id: d.id, name: d.nombre })))
       }
       if (matchResult.data) setRecentMatches(matchResult.data)

@@ -641,7 +641,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
                   <span className="bg-surface-border text-slate-300 px-2 py-0.5 rounded text-xs">{jugadoresSueltos.length} restantes</span>
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">Click en el menú del jugador para asignarlo a una zona.</p>
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1 pb-12 custom-scrollbar">
                   {jugadoresSueltos.length === 0 ? (
                     <div className="text-center p-4 border border-dashed border-surface-border rounded-lg text-slate-500 text-sm">
                       No hay jugadores pendientes
