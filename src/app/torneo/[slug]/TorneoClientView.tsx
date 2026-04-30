@@ -458,6 +458,90 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
     loadCategoryData()
   }, [currentCatId, torneoId])
 
+  // === REALTIME: Suscripción a cambios en partidos para actualización en vivo ===
+  useEffect(() => {
+    if (!torneoId) return
+
+    let channel: ReturnType<typeof supabase.channel> | null = null
+
+    try {
+      channel = supabase
+        .channel(`torneo-partidos-${torneoId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'partidos',
+            filter: `torneo_id=eq.${torneoId}`,
+          },
+          async () => {
+            // Refrescar los datos de la categoría actual
+            if (currentCatId) {
+              const [zonasRes, msRes, cfgRes] = await Promise.all([
+                supabase
+                  .from('zonas')
+                  .select(`id, nombre, participantes_zonas ( participante_id, participantes(id, nombre_mostrado) )`)
+                  .eq('torneo_id', torneoId)
+                  .eq('categoria_id', currentCatId)
+                  .order('nombre'),
+                supabase
+                  .from('partidos')
+                  .select(`id, estado, resultado, zona_id, fase_bracket, bracket_index, fecha_hora, ganador_id, categoria_id, siguiente_partido_id, posicion_siguiente_partido,
+                    p1:participantes!participante_1_id(id, nombre_mostrado),
+                    p2:participantes!participante_2_id(id, nombre_mostrado),
+                    sedes(nombre)`)
+                  .eq('torneo_id', torneoId),
+                supabase
+                  .from('configuracion_llave')
+                  .select('*')
+                  .eq('torneo_id', torneoId)
+                  .eq('categoria_id', currentCatId)
+                  .order('fase')
+                  .order('match_index'),
+              ])
+
+              if (zonasRes.data) setZonas(zonasRes.data)
+              if (msRes.data) {
+                const validZoneIds = zonasRes.data ? zonasRes.data.map(z => z.id) : []
+                const filtered = msRes.data.filter(m =>
+                  m.categoria_id === currentCatId || validZoneIds.includes(m.zona_id) || (!m.categoria_id && !m.zona_id)
+                )
+                setMatches(filtered)
+              }
+              if (cfgRes.data) setConfigLlave(cfgRes.data)
+            }
+
+            // Refrescar últimos resultados
+            const { data: recentData } = await supabase
+              .from('partidos')
+              .select(`id, resultado, ganador_id,
+                p1:participantes!participante_1_id(id, nombre_mostrado),
+                p2:participantes!participante_2_id(id, nombre_mostrado),
+                categorias(nombre)`)
+              .eq('torneo_id', torneoId)
+              .eq('estado', 'finalizado')
+              .not('resultado', 'is', null)
+              .order('updated_at', { ascending: false, nullsFirst: false })
+              .limit(5)
+
+            if (recentData) setRecentMatches(recentData)
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.warn('[Realtime] No se pudo conectar al canal en vivo. Los datos se actualizarán al recargar la página.')
+          }
+        })
+    } catch {
+      console.warn('[Realtime] Error al inicializar la suscripción. El modo manual sigue activo.')
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [torneoId, currentCatId, supabase])
+
   const roundData = useMemo(() => buildBracket(matches, configLlave), [matches, configLlave])
   const zonaMatchesLookup = matches.filter(m => m.zona_id && (!m.fase_bracket || m.fase_bracket === 'Fase de Grupos'))
 
@@ -568,8 +652,8 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                         <div className={`flex gap-2.5 font-mono text-sm items-center ${isP1Winner ? 'text-brand-300 font-bold' : 'text-slate-500'}`}>
                           {sets.filter((s: any) => !s.isSuper).map((s: any, i: number) => <span key={i} className="w-5 text-center flex-shrink-0">{s.s1}{s.tb1 !== undefined ? <sup className="text-[9px] ml-0.5">{s.tb1}</sup> : ''}</span>)}
                           {(() => { const st = sets.find((s: any) => s.isSuper); return st ? (
-                            <div className="flex flex-col items-center flex-shrink-0 -mt-2.5">
-                              <span className="text-[8px] font-bold tracking-wider text-amber-500 leading-none mb-0.5">STB</span>
+                            <div className="relative flex justify-center flex-shrink-0 min-w-[24px]">
+                              <span className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 text-[9px] font-bold tracking-widest text-amber-500 font-sans leading-none">STB</span>
                               <span>{st.s1}</span>
                             </div>
                           ) : null })()}
