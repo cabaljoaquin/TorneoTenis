@@ -48,7 +48,6 @@ export default function CuadrosWorkspace({ userId }: Props) {
   useEffect(() => {
     if (!userId) return
     async function init() {
-      // Solo torneos de este admin
       const { data: ts } = await supabase
         .from('torneos')
         .select('*')
@@ -63,17 +62,42 @@ export default function CuadrosWorkspace({ userId }: Props) {
         setLoading(false)
       }
 
-      const { data: cs } = await supabase.from('categorias').select('*')
-      if (cs && cs.length > 0) {
-        setCategorias(cs)
-        setCategoriaActiva(cs[0].id)
-      }
-
       const { data: sds } = await supabase.from('sedes').select('*')
       if (sds) setSedes(sds)
     }
     init()
   }, [userId])
+
+  useEffect(() => {
+    if (!torneoActivo) return
+    async function loadCategorias() {
+      const { data: ins } = await supabase
+        .from('inscripciones')
+        .select('categoria_id')
+        .eq('torneo_id', torneoActivo)
+
+      if (!ins || ins.length === 0) {
+        setCategorias([])
+        setCategoriaActiva('')
+        return
+      }
+
+      const catIds = [...new Set(ins.map((i: any) => i.categoria_id))]
+      const { data: cs } = await supabase
+        .from('categorias')
+        .select('*')
+        .in('id', catIds)
+
+      if (cs && cs.length > 0) {
+        setCategorias(cs)
+        setCategoriaActiva(cs[0].id)
+      } else {
+        setCategorias([])
+        setCategoriaActiva('')
+      }
+    }
+    loadCategorias()
+  }, [torneoActivo])
 
   useEffect(() => {
     if (torneoActivo && categoriaActiva) loadWorkspace(torneoActivo, categoriaActiva)
