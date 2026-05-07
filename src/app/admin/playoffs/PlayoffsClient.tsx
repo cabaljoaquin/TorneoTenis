@@ -105,14 +105,17 @@ export default function PlayoffsClient({ userId }: Props) {
   const addMatch = () => setCruces((prev) => [...prev, { p1: '', p2: '' }])
   const removeMatch = (i: number) => setCruces((prev) => prev.filter((_, j) => j !== i))
 
-  // Init: load torneos y categorias
+  // Init: load torneos
   useEffect(() => {
     if (!userId) return
     async function init() {
-      const [{ data: ts }, { data: cs }] = await Promise.all([
-        supabase.from('torneos').select('id, nombre').eq('admin_id', userId).neq('estado', 'Finalizado').order('created_at', { ascending: false }),
-        supabase.from('categorias').select('id, nombre').order('nombre'),
-      ])
+      const { data: ts } = await supabase
+        .from('torneos')
+        .select('id, nombre')
+        .eq('admin_id', userId)
+        .neq('estado', 'Finalizado')
+        .order('created_at', { ascending: false })
+
       if (ts && ts.length > 0) {
         setTorneos(ts)
         setTorneoActivo(ts[0].id)
@@ -120,13 +123,42 @@ export default function PlayoffsClient({ userId }: Props) {
         setTorneos([])
         setLoading(false)
       }
-      if (cs && cs.length > 0) {
-        setCategorias(cs)
-        setCategoriaActiva(cs[0].id)
-      }
     }
     init()
   }, [userId])
+
+  // Load categorias when torneoActivo changes
+  useEffect(() => {
+    if (!torneoActivo) return
+    async function loadCategorias() {
+      const { data: ins } = await supabase
+        .from('inscripciones')
+        .select('categoria_id')
+        .eq('torneo_id', torneoActivo)
+
+      if (!ins || ins.length === 0) {
+        setCategorias([])
+        setCategoriaActiva('')
+        return
+      }
+
+      const catIds = [...new Set(ins.map((i: any) => i.categoria_id))]
+      const { data: cs } = await supabase
+        .from('categorias')
+        .select('id, nombre')
+        .in('id', catIds)
+        .order('nombre')
+
+      if (cs && cs.length > 0) {
+        setCategorias(cs)
+        setCategoriaActiva(cs[0].id)
+      } else {
+        setCategorias([])
+        setCategoriaActiva('')
+      }
+    }
+    loadCategorias()
+  }, [torneoActivo])
 
   useEffect(() => {
     if (torneoActivo && categoriaActiva) loadWorkspace()
