@@ -5,24 +5,25 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
 interface CategoryTabsProps {
-  categories: { id: string; name: string }[]
-  onTabClick?: (id: string) => void
+  categories: { id: string; name: string; slug?: string }[]
+  onTabClick?: (slugOrId: string) => void
 }
 
 function CategoryTabsContent({ categories, onTabClick }: CategoryTabsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const currentCat = searchParams.get('cat') || categories[0]?.id
+  const currentCat = searchParams.get('cat')
 
   return (
     <div className="flex px-4 overflow-x-auto no-scrollbar gap-2 pb-2">
       {categories.map((cat) => {
-        const isActive = currentCat === cat.id
+        const catKey = cat.slug || cat.id
+        const isActive = currentCat ? (currentCat === cat.slug || currentCat === cat.id) : cat === categories[0]
 
         return (
           <button
             key={cat.id}
-            onClick={() => onTabClick ? onTabClick(cat.id) : router.push(`?cat=${cat.id}`, { scroll: false })}
+            onClick={() => onTabClick ? onTabClick(catKey) : router.push(`?cat=${catKey}`, { scroll: false })}
             className={`relative px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
               isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -49,4 +50,3 @@ export default function CategoryTabs(props: CategoryTabsProps) {
     </Suspense>
   )
 }
-
