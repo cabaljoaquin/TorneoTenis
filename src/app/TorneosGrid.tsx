@@ -3,6 +3,9 @@
 import { motion, Variants } from 'framer-motion'
 import Link from 'next/link'
 import { Users, User, CalendarDays, Trophy, ArrowRight } from 'lucide-react'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
 
 interface Torneo {
   id: string
@@ -39,6 +42,27 @@ function formatDate(dateStr: string | null) {
 }
 
 export function TorneosGrid({ torneos }: Props) {
+  const router = useRouter()
+
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('public-torneos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'torneos' },
+        () => {
+          // Cuando hay un cambio en torneos (ej. cambió de estado), refrescamos la página
+          router.refresh()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [router])
+
   if (torneos.length === 0) {
     return (
       <motion.div

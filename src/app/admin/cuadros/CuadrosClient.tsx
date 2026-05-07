@@ -843,56 +843,94 @@ export default function CuadrosWorkspace({ userId }: Props) {
         {/* MODAL */}
         <AnimatePresence>
           {isModalOpen && zonaScheduling && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-surface border border-surface-border rounded-xl shadow-2xl relative z-10 w-full max-w-lg p-6 flex flex-col gap-5">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2"><Calendar className="text-brand-500" /> Programar Partido</h3>
-                  <p className="text-sm text-slate-400 mt-1">Para <strong className="text-slate-200">{zonaScheduling.zona.nombre}</strong>.</p>
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 40 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+                className="bg-surface border border-surface-border rounded-t-2xl sm:rounded-xl shadow-2xl relative z-10 w-full sm:max-w-lg flex flex-col"
+              >
+                {/* Header */}
+                <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-surface-border/60">
+                  <div className="w-9 h-9 rounded-lg bg-brand-600/15 border border-brand-600/25 flex items-center justify-center shrink-0">
+                    <Calendar size={17} className="text-brand-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-slate-100 leading-tight">
+                      {matchForm.id ? 'Editar Partido' : 'Programar Partido'}
+                    </h3>
+                    <p className="text-xs text-slate-500 truncate">
+                      Zona: <span className="font-semibold text-slate-400">{zonaScheduling.zona.nombre}</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+
+                {/* Body */}
+                <div className="p-5 space-y-4 overflow-y-auto max-h-[60vh] sm:max-h-none">
+                  {/* Jugadores: stack en mobile, grid en sm+ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-400">Jugador 1</label>
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jugador 1</label>
                       <select className="input-field w-full text-sm" value={matchForm.p1} onChange={e => setMatchForm({ ...matchForm, p1: e.target.value })}>
                         <option value="">Seleccionar...</option>
                         {zonaScheduling.jugadores.map(j => <option key={j.pId} value={j.pId}>{j.nombre_mostrado}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-400">Jugador 2</label>
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jugador 2</label>
                       <select className="input-field w-full text-sm" value={matchForm.p2} onChange={e => setMatchForm({ ...matchForm, p2: e.target.value })}>
                         <option value="">Seleccionar...</option>
                         {zonaScheduling.jugadores.map(j => <option key={j.pId} value={j.pId}>{j.nombre_mostrado}</option>)}
                       </select>
                     </div>
                   </div>
+
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400">Fase</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fase</label>
                     <select className="input-field w-full text-sm" value={matchForm.fase} onChange={e => setMatchForm({ ...matchForm, fase: e.target.value })}>
                       {['Fase de Grupos', '32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final'].map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+
+                  {/* Fecha y Sede: stack en mobile, grid en sm+ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-400">Fecha y Hora (Opcional)</label>
-                      <input type="datetime-local" className="input-field w-full text-sm" value={matchForm.fechaHora} onChange={e => setMatchForm({ ...matchForm, fechaHora: e.target.value })} />
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fecha y Hora</label>
+                      <input
+                        type="datetime-local"
+                        className="input-field w-full text-sm"
+                        value={matchForm.fechaHora}
+                        onChange={e => setMatchForm({ ...matchForm, fechaHora: e.target.value })}
+                      />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-400">Sede (Opcional)</label>
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Sede</label>
                       <select className="input-field w-full text-sm" value={matchForm.sedeId} onChange={e => setMatchForm({ ...matchForm, sedeId: e.target.value })}>
-                        <option value="">Sin definir...</option>
+                        <option value="">Sin definir</option>
                         {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                       </select>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-end gap-3 mt-4">
-                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">Cancelar</button>
-                  <button onClick={handleCreateMatch} disabled={isSavingMatch} className="btn-primary py-2 px-5">
-                    {isSavingMatch ? <Loader2 size={18} className="animate-spin inline" /> : 'Guardar Partido'}
+
+                {/* Footer */}
+                <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 px-5 py-4 border-t border-surface-border/60">
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="w-full sm:w-auto px-5 py-2.5 text-sm font-medium text-slate-400 hover:text-slate-200 bg-surface-card hover:bg-surface-border rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleCreateMatch}
+                    disabled={isSavingMatch}
+                    className="w-full sm:w-auto btn-primary py-2.5 px-6 flex items-center justify-center gap-2"
+                  >
+                    {isSavingMatch ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {matchForm.id ? 'Guardar Cambios' : 'Guardar Partido'}
                   </button>
                 </div>
               </motion.div>
