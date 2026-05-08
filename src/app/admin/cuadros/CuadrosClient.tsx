@@ -895,13 +895,6 @@ export default function CuadrosWorkspace({ userId }: Props) {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fase</label>
-                    <select className="input-field w-full text-sm" value={matchForm.fase} onChange={e => setMatchForm({ ...matchForm, fase: e.target.value })}>
-                      {['Fase de Grupos', '32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final'].map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </div>
-
                   {/* Fecha y Sede: stack en mobile, grid en sm+ */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
