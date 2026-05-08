@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import {
   Trophy, Plus, Calendar, MapPin, Loader2, CheckCircle2, Circle,
-  Pencil, Eye, EyeOff, X, Save, CheckCheck
+  Pencil, Eye, EyeOff, X, Save, CheckCheck, ExternalLink
 } from 'lucide-react'
 
 interface Torneo {
@@ -250,7 +250,16 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-slate-100 text-base leading-tight truncate">{t.nombre}</h3>
+                    <a
+                      href={`/torneo/${t.slug || t.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ver torneo público"
+                      className="group/link flex items-center gap-1.5 hover:text-brand-400 transition-colors"
+                    >
+                      <h3 className="font-bold text-slate-100 text-base leading-tight truncate group-hover/link:text-brand-400 transition-colors">{t.nombre}</h3>
+                      <ExternalLink size={13} className="text-slate-600 group-hover/link:text-brand-400 transition-colors shrink-0" />
+                    </a>
                     {!t.visible && (
                       <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-400 border border-slate-600/40 shrink-0">
                         Oculto
