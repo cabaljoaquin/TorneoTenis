@@ -414,7 +414,7 @@ export default function PartidosClient({ userId }: Props) {
                       <button
                         onClick={() => openScheduleEdit(match)}
                         title="Editar sede y horario"
-                        className="ml-1 p-1.5 rounded text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all sm:opacity-0 sm:group-hover/schedule:opacity-100 shrink-0"
+                        className="ml-1 p-1.5 rounded text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all shrink-0"
                       >
                         <Pencil size={12} />
                       </button>
