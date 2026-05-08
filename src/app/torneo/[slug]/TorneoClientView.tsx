@@ -110,7 +110,7 @@ function buildBracket(partidos: any[], configLlave?: any[]): any[] {
           const isActive = activeMatchIds.has(p.id)
           roundsMap[fase].push({
             id: p.id,
-            bracket_index: i, // Use the visual index
+            bracket_index: i,
             p1: p.p1?.nombre_mostrado || 'Esperando ganador...',
             p2: p.p2?.nombre_mostrado || 'Esperando ganador...',
             isP1Waiting: !p.p1,
@@ -122,6 +122,8 @@ function buildBracket(partidos: any[], configLlave?: any[]): any[] {
             finished: p.estado === 'finalizado',
             isPlaceholder: false,
             isHidden: !isActive,
+            sede: p.sedes?.nombre || null,
+            fechaHora: p.fecha_hora || null,
           })
         } else {
           roundsMap[fase].push({
@@ -437,6 +439,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
           sedes(nombre)
         `)
         .eq('torneo_id', torneoId)
+        .eq('categoria_id', currentCatId)
 
       const { data: cfgLlave } = await supabase
         .from('configuracion_llave')
@@ -447,9 +450,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
         .order('match_index')
       
       const validZoneIds = zs ? zs.map(z => z.id) : []
-      const filteredMs = (ms || []).filter(m => {
-        return m.categoria_id === currentCatId || validZoneIds.includes(m.zona_id) || (!m.categoria_id && !m.zona_id)
-      })
+      const filteredMs = (ms || [])
 
       if (zs) setZonas(zs)
       if (filteredMs) setMatches(filteredMs)
@@ -493,7 +494,8 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                     p1:participantes!participante_1_id(id, nombre_mostrado),
                     p2:participantes!participante_2_id(id, nombre_mostrado),
                     sedes(nombre)`)
-                  .eq('torneo_id', torneoId),
+                  .eq('torneo_id', torneoId)
+                  .eq('categoria_id', currentCatId),
                 supabase
                   .from('configuracion_llave')
                   .select('*')
@@ -504,13 +506,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
               ])
 
               if (zonasRes.data) setZonas(zonasRes.data)
-              if (msRes.data) {
-                const validZoneIds = zonasRes.data ? zonasRes.data.map(z => z.id) : []
-                const filtered = msRes.data.filter(m =>
-                  m.categoria_id === currentCatId || validZoneIds.includes(m.zona_id) || (!m.categoria_id && !m.zona_id)
-                )
-                setMatches(filtered)
-              }
+              if (msRes.data) setMatches(msRes.data)
               if (cfgRes.data) setConfigLlave(cfgRes.data)
             }
 

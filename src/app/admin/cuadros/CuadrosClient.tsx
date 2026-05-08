@@ -34,6 +34,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
   const [isGeneratingCruces, setIsGeneratingCruces] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  // Recuerda la última sede usada manualmente para pre-cargarla en el siguiente partido
+  const lastUsedSedeId = useRef<string>('')
 
   // Knockout-specific state
   const [knockoutForm, setKnockoutForm] = useState({ id: '', p1: '', p2: '', fase: '32avos de Final', fechaHora: '', sedeId: '' })
@@ -44,6 +46,9 @@ export default function CuadrosWorkspace({ userId }: Props) {
     const t = torneos.find(t => t.id === torneoActivo)
     return t?.formato === 'eliminatoria' ? 'eliminatoria' : 'grupos'
   })()
+
+  // Sede por defecto: primero la del torneo, luego la última usada manualmente
+  const defaultSedeId = torneos.find(t => t.id === torneoActivo)?.sede_id || lastUsedSedeId.current || ''
 
   useEffect(() => {
     if (!userId) return
@@ -245,7 +250,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
       const { error } = await supabase.from('partidos').insert(payload)
       if (error) alert('Error al programar partido: ' + error.message)
     }
-    setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
+    if (matchForm.sedeId) lastUsedSedeId.current = matchForm.sedeId
+    setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: defaultSedeId, fase: 'Fase de Grupos' })
     setIsModalOpen(false)
     setIsSavingMatch(false)
     // Reload to get fresh partido data with participant names
@@ -555,7 +561,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
       }
 
       setIsSavingKnockout(false)
-      setKnockoutForm({ id: '', p1: '', p2: '', fase: knockoutForm.fase, fechaHora: '', sedeId: '' })
+      if (knockoutForm.sedeId) lastUsedSedeId.current = knockoutForm.sedeId
+      setKnockoutForm({ id: '', p1: '', p2: '', fase: knockoutForm.fase, fechaHora: '', sedeId: defaultSedeId })
       loadWorkspace(torneoActivo, categoriaActiva, false)
     }
 
@@ -818,7 +825,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
                           disabled={jDeEstaZona.length < 2 || playoffsGenerados}
                           onClick={() => {
                             setZonaScheduling({ zona, jugadores: jDeEstaZona })
-                            setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: '', fase: 'Fase de Grupos' })
+                            setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: defaultSedeId, fase: 'Fase de Grupos' })
                             setIsModalOpen(true)
                           }}
                           className="w-full text-xs py-2 bg-brand-600/10 hover:bg-brand-500 hover:text-white border border-brand-500/30 font-semibold uppercase tracking-wider rounded-lg text-brand-400 transition-colors disabled:opacity-30 disabled:pointer-events-none"

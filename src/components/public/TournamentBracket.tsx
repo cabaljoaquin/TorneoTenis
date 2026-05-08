@@ -1,6 +1,7 @@
 'use client'
 
 import { motion, Variants } from 'framer-motion'
+import { MapPin, Clock } from 'lucide-react'
 
 interface Match {
   id: string
@@ -16,11 +17,20 @@ interface Match {
   isP2Waiting?: boolean
   isHidden?: boolean
   bracket_index?: number
+  sede?: string | null
+  fechaHora?: string | null
 }
 
 interface Round {
   title: string
   matches: Match[]
+}
+
+function formatMatchDate(iso: string) {
+  const d = new Date(iso)
+  const day = d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+  const time = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  return { day, time }
 }
 
 export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
@@ -66,7 +76,6 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
                     P{match.bracket_index !== undefined ? match.bracket_index + 1 : rIndex + 1}
                   </div>
                 )}
-                {/* Badge placeholder */}
                 {match.isPlaceholder && (
                   <div className="px-3 pt-1.5 pb-0">
                     <span className="text-[9px] uppercase font-bold tracking-widest text-amber-500/70">
@@ -135,6 +144,27 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
                   </div>
                 </div>
 
+                {/* Footer: sede y horario — solo si hay datos y el partido no está finalizado */}
+                {!match.isHidden && !match.isPlaceholder && !match.finished && (match.sede || match.fechaHora) && (
+                  <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-900/40 border-t border-surface-border/40 flex-wrap">
+                    {match.fechaHora && (() => {
+                      const { day, time } = formatMatchDate(match.fechaHora)
+                      return (
+                        <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                          <Clock size={9} className="text-slate-500 shrink-0" />
+                          {day} · {time}
+                        </span>
+                      )
+                    })()}
+                    {match.sede && (
+                      <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium truncate">
+                        <MapPin size={9} className="text-slate-500 shrink-0" />
+                        {match.sede}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Conectores */}
                 {!match.isHidden && rIndex < rounds.length - 1 && (
                   <div className="absolute top-1/2 -right-6 w-6 h-px bg-surface-border" />
@@ -150,4 +180,3 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
     </motion.div>
   )
 }
-

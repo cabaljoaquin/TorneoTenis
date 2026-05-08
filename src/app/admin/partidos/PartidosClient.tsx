@@ -1,7 +1,7 @@
 'use client'
 
-import { motion, Variants } from 'framer-motion'
-import { CheckCircle2, Clock, Trophy, Loader2, Search } from 'lucide-react'
+import { motion, Variants, AnimatePresence } from 'framer-motion'
+import { CheckCircle2, Clock, Trophy, Loader2, Search, MapPin, Pencil, X, Save } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { parseTennisScore } from '@/utils/scoreParser'
 import { createClient } from '@/utils/supabase/client'
@@ -27,6 +27,7 @@ export default function PartidosClient({ userId }: Props) {
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null)
   const [torneos, setTorneos] = useState<{id: string, nombre: string}[]>([])
   const [torneosIds, setTorneosIds] = useState<string[]>([])
+  const [sedes, setSedes] = useState<{id: string, nombre: string}[]>([])
 
   const [selectedWinners, setSelectedWinners] = useState<Record<string, string>>({})
   const [inputs, setInputs] = useState<Record<string, string>>({})
@@ -39,7 +40,12 @@ export default function PartidosClient({ userId }: Props) {
   const [filterTorneo, setFilterTorneo] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState<string>('')
 
-  // Cargamos los IDs de torneos del admin actual al montar
+  // Estado para edición inline de sede/fecha
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
+  const [editSedeId, setEditSedeId] = useState('')
+  const [editFechaHora, setEditFechaHora] = useState('')
+  const [savingScheduleId, setSavingScheduleId] = useState<string | null>(null)
+
   useEffect(() => {
     if (!userId) return
     async function loadTorneos() {
@@ -56,15 +62,19 @@ export default function PartidosClient({ userId }: Props) {
       const { data } = await supabase.from('categorias').select('id, nombre').order('nombre')
       if (data) setCategories(data)
     }
+    async function loadSedes() {
+      const { data } = await supabase.from('sedes').select('id, nombre').order('nombre')
+      if (data) setSedes(data)
+    }
     loadTorneos()
     loadCategories()
+    loadSedes()
   }, [userId])
 
   const fetchMatches = async () => {
     if (!userId) return
     setLoading(true)
 
-    // Si el admin no tiene torneos, no mostramos nada
     if (torneosIds.length === 0) {
       setMatches([])
       setLoading(false)
@@ -75,16 +85,14 @@ export default function PartidosClient({ userId }: Props) {
       .from('partidos')
       .select(`
         id, fecha_hora, estado, participante_1_id, participante_2_id, ganador_id, resultado, fase_bracket,
-        siguiente_partido_id, posicion_siguiente_partido, updated_at,
-        sedes(nombre),
+        siguiente_partido_id, posicion_siguiente_partido, updated_at, sede_id,
+        sedes(id, nombre),
         p1:participantes!participante_1_id(id, nombre_mostrado),
         p2:participantes!participante_2_id(id, nombre_mostrado)
       `)
-      // Filtramos solo partidos de torneos activos de este admin
       .in('torneo_id', filterTorneo !== 'all' ? [filterTorneo] : torneosIds)
 
     if (tab === 'pendientes') {
-      // Ordenamos primero por fase de grupos para que se jueguen primero, y luego eliminatorias, y fecha
       query = query.eq('estado', 'pendiente').order('fecha_hora', { ascending: true, nullsFirst: false }).order('id')
     } else {
       query = query.eq('estado', 'finalizado').order('updated_at', { ascending: false, nullsFirst: false }).order('fecha_hora', { ascending: false }).limit(30)
@@ -138,6 +146,29 @@ export default function PartidosClient({ userId }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, filterCat, filterFase, filterTorneo, torneosIds.join(',')])
 
+  const openScheduleEdit = (match: any) => {
+    setEditingScheduleId(match.id)
+    setEditSedeId(match.sedes?.id || match.sede_id || '')
+    setEditFechaHora(match.fecha_hora ? new Date(match.fecha_hora).toISOString().slice(0, 16) : '')
+  }
+
+  const handleSaveSchedule = async (matchId: string) => {
+    setSavingScheduleId(matchId)
+    const { error } = await supabase
+      .from('partidos')
+      .update({
+        sede_id: editSedeId || null,
+        fecha_hora: editFechaHora ? new Date(editFechaHora).toISOString() : null,
+      })
+      .eq('id', matchId)
+
+    if (!error) {
+      setEditingScheduleId(null)
+      await fetchMatches()
+    }
+    setSavingScheduleId(null)
+  }
+
   const handleWinnerSelect = (matchId: string, participantId: string) => {
     setSelectedWinners(prev => ({ ...prev, [matchId]: participantId }))
   }
@@ -186,8 +217,6 @@ export default function PartidosClient({ userId }: Props) {
       }
     }
 
-    // El usuario siempre ingresa ganador primero. Si el ganador es P2, swapeamos
-    // p1/p2 en todos los sets (incluido STB) para que el DB siempre tenga P1/P2 real.
     const currentMatch = matches.find(m => m.id === id)
     const winnerIsP2 = currentMatch && winnerId === currentMatch.p2?.id
     if (winnerIsP2) {
@@ -199,11 +228,8 @@ export default function PartidosClient({ userId }: Props) {
       })
     }
 
-
-
     setSavingMatchId(id)
 
-    // 1. Update del partido actual
     const { error } = await supabase
       .from('partidos')
       .update({ 
@@ -220,15 +246,12 @@ export default function PartidosClient({ userId }: Props) {
       return
     }
 
-    // 2. Update del partido siguiente (Lógica de Auto-Progresión)
     if (currentMatch?.siguiente_partido_id && currentMatch.posicion_siguiente_partido) {
       const updateField = currentMatch.posicion_siguiente_partido === 1 ? 'participante_1_id' : 'participante_2_id'
-      
       const { error: errSiguiente } = await supabase
         .from('partidos')
         .update({ [updateField]: winnerId })
         .eq('id', currentMatch.siguiente_partido_id)
-        
       if (errSiguiente) {
         console.error('Error auto-progresión:', errSiguiente)
         alert('Se guardó el resultado pero hubo un error actualizando la fase siguiente.')
@@ -309,75 +332,152 @@ export default function PartidosClient({ userId }: Props) {
           {filteredMatches.map((match) => {
             const isP1Winner = selectedWinners[match.id] === match.p1?.id
             const isP2Winner = selectedWinners[match.id] === match.p2?.id
+            const isEditingSchedule = editingScheduleId === match.id
             return (
               <motion.div
                 key={match.id}
                 variants={itemVariants}
-                className={`bg-surface-card border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-lg transition-colors ${selectedWinners[match.id] ? 'border-brand-500/40' : 'border-surface-border'}`}
+                className={`bg-surface-card border rounded-xl overflow-hidden shadow-lg transition-colors ${selectedWinners[match.id] ? 'border-brand-500/40' : 'border-surface-border'}`}
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">
-                    <Clock size={13} />
-                    {match.fecha_hora ? new Date(match.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                    <span className="text-slate-600">•</span> {match.sedes?.nombre || 'Sede N/A'}
-                    {match.fase_bracket && match.fase_bracket !== 'Fase de Grupos' && (
-                      <span className="ml-auto bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-md text-[10px] uppercase font-bold tracking-widest">
-                        {match.fase_bracket}
+                {/* ── Barra de sede / horario ── */}
+                <AnimatePresence mode="wait">
+                  {isEditingSchedule ? (
+                    <motion.div
+                      key="editing"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-4 py-3 bg-slate-900/60 border-b border-surface-border/60"
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        <Clock size={13} className="text-slate-500 shrink-0" />
+                        <input
+                          type="datetime-local"
+                          value={editFechaHora}
+                          onChange={e => setEditFechaHora(e.target.value)}
+                          className="flex-1 bg-surface border border-surface-border rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-colors"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        <MapPin size={13} className="text-slate-500 shrink-0" />
+                        <select
+                          value={editSedeId}
+                          onChange={e => setEditSedeId(e.target.value)}
+                          className="flex-1 bg-surface border border-surface-border rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-colors"
+                        >
+                          <option value="">Sin definir</option>
+                          {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleSaveSchedule(match.id)}
+                          disabled={savingScheduleId === match.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                        >
+                          {savingScheduleId === match.id ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => setEditingScheduleId(null)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="display"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-900/30 border-b border-surface-border/40 group/schedule"
+                    >
+                      <Clock size={12} className="text-slate-600 shrink-0" />
+                      <span className="text-xs text-slate-400 font-medium">
+                        {match.fecha_hora
+                          ? new Date(match.fecha_hora).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) + ' · ' + new Date(match.fecha_hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+                          : <span className="text-slate-600 italic">Sin fecha</span>
+                        }
                       </span>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {match.p1 ? (
-                      <button onClick={() => handleWinnerSelect(match.id, match.p1.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${isP1Winner ? 'bg-brand-600/20 border-brand-500 text-brand-400 font-bold' : 'bg-surface/50 border-transparent hover:border-slate-700 text-slate-200'}`}>
-                        {match.p1.nombre_mostrado} {isP1Winner && '🏆'}
+                      <span className="text-slate-700">·</span>
+                      <MapPin size={12} className="text-slate-600 shrink-0" />
+                      <span className="text-xs text-slate-400 font-medium flex-1 truncate">
+                        {match.sedes?.nombre || <span className="text-slate-600 italic">Sin sede</span>}
+                      </span>
+                      {match.fase_bracket && match.fase_bracket !== 'Fase de Grupos' && (
+                        <span className="hidden sm:inline bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-md text-[10px] uppercase font-bold tracking-widest shrink-0">
+                          {match.fase_bracket}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => openScheduleEdit(match)}
+                        title="Editar sede y horario"
+                        className="ml-1 p-1.5 rounded text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all sm:opacity-0 sm:group-hover/schedule:opacity-100 shrink-0"
+                      >
+                        <Pencil size={12} />
                       </button>
-                    ) : (
-                      <div className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-surface-border text-slate-500 italic text-sm bg-surface/30">Esperando ganador...</div>
-                    )}
-                    
-                    {match.p2 ? (
-                      <button onClick={() => handleWinnerSelect(match.id, match.p2.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${isP2Winner ? 'bg-brand-600/20 border-brand-500 text-brand-400 font-bold' : 'bg-surface/50 border-transparent hover:border-slate-700 text-slate-200'}`}>
-                        {match.p2.nombre_mostrado} {isP2Winner && '🏆'}
-                      </button>
-                    ) : (
-                      <div className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-surface-border text-slate-500 italic text-sm bg-surface/30">Esperando ganador...</div>
-                    )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* ── Cuerpo del partido ── */}
+                <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="flex-1">
+                    <div className="space-y-2">
+                      {match.p1 ? (
+                        <button onClick={() => handleWinnerSelect(match.id, match.p1.id)}
+                          className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${isP1Winner ? 'bg-brand-600/20 border-brand-500 text-brand-400 font-bold' : 'bg-surface/50 border-transparent hover:border-slate-700 text-slate-200'}`}>
+                          {match.p1.nombre_mostrado} {isP1Winner && '🏆'}
+                        </button>
+                      ) : (
+                        <div className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-surface-border text-slate-500 italic text-sm bg-surface/30">Esperando ganador...</div>
+                      )}
+                      
+                      {match.p2 ? (
+                        <button onClick={() => handleWinnerSelect(match.id, match.p2.id)}
+                          className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${isP2Winner ? 'bg-brand-600/20 border-brand-500 text-brand-400 font-bold' : 'bg-surface/50 border-transparent hover:border-slate-700 text-slate-200'}`}>
+                          {match.p2.nombre_mostrado} {isP2Winner && '🏆'}
+                        </button>
+                      ) : (
+                        <div className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-surface-border text-slate-500 italic text-sm bg-surface/30">Esperando ganador...</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className={`flex flex-col gap-2 transition-opacity duration-300 ${selectedWinners[match.id] ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                  <label className="text-xs text-brand-400 font-medium text-center md:text-right">Resultado de los Sets</label>
-                  <div className="flex items-center gap-2 self-center md:self-end">
-                    <input
-                      type="text"
-                      placeholder="Ex: 6475"
-                      disabled={savingMatchId !== null || loading}
-                      value={inputs[match.id] || ''}
-                      onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
-                      onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
-                      className={`w-32 md:w-40 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-2 md:px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
-                    />
-                    <div className="relative">
+                  <div className={`flex flex-col gap-2 transition-opacity duration-300 ${selectedWinners[match.id] ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    <label className="text-xs text-brand-400 font-medium text-center md:text-right">Resultado de los Sets</label>
+                    <div className="flex items-center gap-2 self-center md:self-end">
                       <input
                         type="text"
+                        placeholder="Ex: 6475"
+                        disabled={savingMatchId !== null || loading}
+                        value={inputs[match.id] || ''}
+                        onChange={e => setInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
+                        className={`w-32 md:w-40 hover:bg-surface-hover/50 border border-surface-border rounded-lg outline-none px-2 md:px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-center tracking-widest font-mono ${tab === 'finalizados' ? 'bg-brand-900/10' : 'bg-surface'}`}
+                      />
+                      <div className="relative">
+                        <input
+                          type="text"
                           placeholder="Ej: 10-8"
                           disabled={savingMatchId !== null || loading}
                           value={stInputs[match.id] || ''}
                           onChange={e => setStInputs(prev => ({ ...prev, [match.id]: e.target.value }))}
                           onKeyDown={e => e.key === 'Enter' && handleScoreSubmit(match.id)}
                           className={`w-24 md:w-28 rounded-lg outline-none px-1 md:px-3 py-2.5 text-xs text-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all text-center tracking-wider font-mono ${stInputs[match.id] ? 'border border-amber-500/30 bg-amber-950/20 placeholder-amber-700' : 'border border-dashed border-slate-600 bg-transparent placeholder-slate-700'} ${tab === 'finalizados' && stInputs[match.id] ? 'bg-amber-900/10' : ''}`}
-                      />
-                      <span className="absolute -top-2 left-2 text-[9px] font-bold uppercase tracking-widest text-amber-500/70 bg-surface-card px-1">STB</span>
+                        />
+                        <span className="absolute -top-2 left-2 text-[9px] font-bold uppercase tracking-widest text-amber-500/70 bg-surface-card px-1">STB</span>
+                      </div>
+                      <button
+                        onClick={() => handleScoreSubmit(match.id)}
+                        disabled={savingMatchId !== null || loading}
+                        className="p-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-all disabled:opacity-50 flex-shrink-0"
+                        title="Guardar partido"
+                      >
+                        {savingMatchId === match.id ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleScoreSubmit(match.id)}
-                      disabled={savingMatchId !== null || loading}
-                      className="p-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition-all disabled:opacity-50 flex-shrink-0"
-                      title="Guardar partido"
-                    >
-                      {savingMatchId === match.id ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
-                    </button>
                   </div>
                 </div>
               </motion.div>
