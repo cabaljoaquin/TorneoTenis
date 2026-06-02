@@ -34,7 +34,7 @@ export default function PartidosClient({ userId }: Props) {
   const [stInputs, setStInputs] = useState<Record<string, string>>({})
   const [tab, setTab] = useState<'pendientes' | 'finalizados'>('pendientes')
   
-  const [categories, setCategories] = useState<{id: string, nombre: string}[]>([])
+  // Las categorías disponibles se derivan dinámicamente de los partidos cargados
   const [filterCat, setFilterCat] = useState<string>('all')
   const [filterFase, setFilterFase] = useState<string>('all')
   const [filterTorneo, setFilterTorneo] = useState<string>('all')
@@ -58,16 +58,12 @@ export default function PartidosClient({ userId }: Props) {
       setTorneos(items)
       setTorneosIds(items.map(t => t.id))
     }
-    async function loadCategories() {
-      const { data } = await supabase.from('categorias').select('id, nombre').order('nombre')
-      if (data) setCategories(data)
-    }
+
     async function loadSedes() {
       const { data } = await supabase.from('sedes').select('id, nombre').order('nombre')
       if (data) setSedes(data)
     }
     loadTorneos()
-    loadCategories()
     loadSedes()
   }, [userId])
 
@@ -85,8 +81,9 @@ export default function PartidosClient({ userId }: Props) {
       .from('partidos')
       .select(`
         id, fecha_hora, estado, participante_1_id, participante_2_id, ganador_id, resultado, fase_bracket,
-        siguiente_partido_id, posicion_siguiente_partido, updated_at, sede_id,
+        siguiente_partido_id, posicion_siguiente_partido, updated_at, sede_id, categoria_id,
         sedes(id, nombre),
+        categorias(id, nombre),
         p1:participantes!participante_1_id(id, nombre_mostrado),
         p2:participantes!participante_2_id(id, nombre_mostrado)
       `)
@@ -265,6 +262,27 @@ export default function PartidosClient({ userId }: Props) {
     setSavingMatchId(null)
   }
 
+  // Categorías disponibles derivadas de los partidos actuales (sin query extra)
+  const availableCategories = useMemo(() => {
+    const seen = new Map<string, string>()
+    matches.forEach(m => {
+      if (m.categorias?.id && m.categorias?.nombre) {
+        seen.set(m.categorias.id, m.categorias.nombre)
+      }
+    })
+    return Array.from(seen.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [matches])
+
+  // Si al cambiar de tab la categoría seleccionada ya no existe, resetear
+  useEffect(() => {
+    if (filterCat !== 'all' && availableCategories.length > 0) {
+      const stillExists = availableCategories.some(c => c.id === filterCat)
+      if (!stillExists) setFilterCat('all')
+    }
+  }, [availableCategories, filterCat])
+
   const filteredMatches = matches.filter(m => {
     if (!searchTerm) return true
     const term = searchTerm.toLowerCase()
@@ -301,7 +319,7 @@ export default function PartidosClient({ userId }: Props) {
           </select>
           <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field">
             <option value="all">Todas las Categorías</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {availableCategories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
           <select value={filterFase} onChange={e => setFilterFase(e.target.value)} className="select-field">
             <option value="all">Todas las Fases</option>
