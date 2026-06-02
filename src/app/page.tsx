@@ -57,6 +57,21 @@ export default async function PublicHomePage() {
         </div>
         <TorneosGrid torneos={torneosSorted as any} />
       </section>
+
+      {/* === FOOTER CTA === */}
+      <footer className="border-t border-white/5 py-8 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-slate-700">TorneoTenis © 2026 — Plataforma de torneos amateur</p>
+          <a
+            href="https://wa.me/5493564516387"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-slate-600 hover:text-brand-400 transition-colors duration-200 underline underline-offset-4 decoration-slate-700 hover:decoration-brand-500"
+          >
+            ¿Querés administrar tu torneo?
+          </a>
+        </div>
+      </footer>
     </main>
   )
 }

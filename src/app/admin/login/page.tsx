@@ -130,14 +130,14 @@ export default function AdminLoginPage() {
 
           <p className="text-center text-xs text-slate-600 mt-5">
             ¿Problemas para acceder?{' '}
-            <a href="mailto:soporte@club.com" className="text-brand-500 hover:text-brand-400 transition-colors">
+            <a href="https://wa.me/5493564516387" target="_blank" rel="noopener noreferrer" className="text-brand-500 hover:text-brand-400 transition-colors">
               Contactá al organizador
             </a>
           </p>
         </div>
 
         <p className="text-center text-xs text-slate-700 mt-6">
-          TorneoTenis © 2025 — Plataforma de torneos amateur
+          TorneoTenis © 2026 — Plataforma de torneos amateur
         </p>
       </div>
     </div>
