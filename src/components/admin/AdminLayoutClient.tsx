@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import FeedbackProvider from '@/components/ui/FeedbackProvider'
 import { Menu } from 'lucide-react'
 
 interface Props {
@@ -22,6 +23,7 @@ export default function AdminLayoutClient({ children, torneoCount }: Props) {
   }
 
   return (
+    <FeedbackProvider>
     <div className="flex h-screen bg-surface overflow-hidden">
       <AdminSidebar 
         isOpen={sidebarOpen} 
@@ -46,10 +48,9 @@ export default function AdminLayoutClient({ children, torneoCount }: Props) {
               <p className="text-xs text-slate-500 mt-0.5 hidden md:block">Sistema de gestión de torneos</p>
             </div>
           </div>
-          {/* Decoración tenis — raqueta + pelota */}
+          {/* Decoración tenis */}
           <div className="flex items-center gap-1.5 select-none" title="TorneoTenis">
             <span className="text-xl leading-none">🎾</span>
-            <span className="text-xl leading-none">🏸</span>
           </div>
         </header>
 
@@ -58,5 +59,6 @@ export default function AdminLayoutClient({ children, torneoCount }: Props) {
         </main>
       </div>
     </div>
+    </FeedbackProvider>
   )
 }

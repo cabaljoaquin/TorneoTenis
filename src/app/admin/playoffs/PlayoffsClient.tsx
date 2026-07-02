@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { GitBranch, Loader2, Save, AlertCircle, CheckCircle2, Zap, Trophy, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import TournamentBracket from '@/components/public/TournamentBracket'
 import { calculateStandings, parseOrigen } from '@/utils/standingsCalculator'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
+import { SkeletonPanel } from '@/components/ui/Skeletons'
+import { loadPref, savePref } from '@/utils/adminPrefs'
 
 const FASES_OPTIONS = ['32avos de Final', '16avos de Final', 'Octavos de Final', 'Cuartos de Final', 'Semifinal', 'Final']
 
@@ -31,6 +33,7 @@ interface Props {
 
 export default function PlayoffsClient({ userId }: Props) {
   const supabase = createClient()
+  const { toast } = useFeedback()
 
   const [torneos, setTorneos] = useState<any[]>([])
   const [categorias, setCategorias] = useState<any[]>([])
@@ -48,7 +51,6 @@ export default function PlayoffsClient({ userId }: Props) {
 
   const [pendingCount, setPendingCount] = useState<number | null>(null)
   const [playoffsYaGenerados, setPlayoffsYaGenerados] = useState(false)
-  const [msg, setMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
 
   const matchCount = MATCHES_PER_FASE[faseActiva] || 1
 
@@ -118,7 +120,8 @@ export default function PlayoffsClient({ userId }: Props) {
 
       if (ts && ts.length > 0) {
         setTorneos(ts)
-        setTorneoActivo(ts[0].id)
+        const stored = loadPref('torneo')
+        setTorneoActivo(ts.find(t => t.id === stored)?.id ?? ts[0].id)
       } else {
         setTorneos([])
         setLoading(false)
@@ -126,6 +129,14 @@ export default function PlayoffsClient({ userId }: Props) {
     }
     init()
   }, [userId])
+
+  useEffect(() => {
+    if (torneoActivo) savePref('torneo', torneoActivo)
+  }, [torneoActivo])
+
+  useEffect(() => {
+    if (categoriaActiva) savePref('categoria', categoriaActiva)
+  }, [categoriaActiva])
 
   // Load categorias when torneoActivo changes
   useEffect(() => {
@@ -151,7 +162,8 @@ export default function PlayoffsClient({ userId }: Props) {
 
       if (cs && cs.length > 0) {
         setCategorias(cs)
-        setCategoriaActiva(cs[0].id)
+        const stored = loadPref('categoria')
+        setCategoriaActiva(cs.find(c => c.id === stored)?.id ?? cs[0].id)
       } else {
         setCategorias([])
         setCategoriaActiva('')
@@ -166,7 +178,6 @@ export default function PlayoffsClient({ userId }: Props) {
 
   const loadWorkspace = async () => {
     setLoading(true)
-    setMsg(null)
 
     const [{ data: zs }, { data: configLlave }, { count: existCount }, { count: pendCount }] =
       await Promise.all([
@@ -217,7 +228,6 @@ export default function PlayoffsClient({ userId }: Props) {
 
   const handleSaveConfig = async () => {
     setIsSaving(true)
-    setMsg(null)
 
     const toInsert = cruces
       .map((c, i) => ({
@@ -240,20 +250,17 @@ export default function PlayoffsClient({ userId }: Props) {
       .eq('fase', faseActiva)
 
     if (delError) {
-      setMsg({ type: 'error', text: 'Error limpiando configuración vieja: ' + delError.message })
+      toast('Error limpiando configuración vieja: ' + delError.message, 'error')
       setIsSaving(false)
       return
     }
 
     if (toInsert.length > 0) {
       const { error: insError } = await supabase.from('configuracion_llave').insert(toInsert)
-      setMsg(
-        insError
-          ? { type: 'error', text: 'Error al reescribir configuración: ' + insError.message }
-          : { type: 'success', text: 'Configuración guardada y sincronizada correctamente.' }
-      )
+      if (insError) toast('Error al reescribir configuración: ' + insError.message, 'error')
+      else toast('Configuración guardada y sincronizada correctamente.')
     } else {
-      setMsg({ type: 'success', text: 'Configuración de llave restablecida (vacía).' })
+      toast('Configuración de llave restablecida (vacía).')
     }
 
     setIsSaving(false)
@@ -261,7 +268,6 @@ export default function PlayoffsClient({ userId }: Props) {
 
   const handleGeneratePlayoffs = async () => {
     setIsGenerating(true)
-    setMsg(null)
 
     // Guard: ya generados
     const { count: existCount } = await supabase
@@ -273,10 +279,7 @@ export default function PlayoffsClient({ userId }: Props) {
       .neq('fase_bracket', 'Fase de Grupos')
 
     if ((existCount ?? 0) > 0) {
-      setMsg({
-        type: 'error',
-        text: 'Ya existen partidos eliminatorios generados para esta categoría. Para regenerar, borrá los existentes desde Gestión de Partidos.',
-      })
+      toast('Ya existen partidos eliminatorios para esta categoría. Para regenerar, borrá los existentes desde Gestión de Partidos.', 'error')
       setIsGenerating(false)
       return
     }
@@ -291,10 +294,7 @@ export default function PlayoffsClient({ userId }: Props) {
       .neq('estado', 'finalizado')
 
     if ((pendCount ?? 0) > 0) {
-      setMsg({
-        type: 'error',
-        text: `No se puede generar: hay ${pendCount} partido(s) de zona pendiente(s). Finalizá todos los partidos antes de continuar.`,
-      })
+      toast(`No se puede generar: hay ${pendCount} partido(s) de zona pendiente(s).`, 'error')
       setPendingCount(pendCount ?? 0)
       setIsGenerating(false)
       return
@@ -308,7 +308,7 @@ export default function PlayoffsClient({ userId }: Props) {
       .eq('categoria_id', categoriaActiva)
 
     if (!allCfg || allCfg.length === 0) {
-      setMsg({ type: 'error', text: 'No hay ninguna configuración teórica de llaves guardada para este torneo/categoría.' })
+      toast('No hay ninguna configuración teórica de llaves guardada para este torneo/categoría.', 'error')
       setIsGenerating(false)
       return
     }
@@ -321,7 +321,7 @@ export default function PlayoffsClient({ userId }: Props) {
     })
 
     if (startIndex >= FASES_OPTIONS.length) {
-      setMsg({ type: 'error', text: 'Fase inicial desconocida en la configuración guardada.' })
+      toast('Fase inicial desconocida en la configuración guardada.', 'error')
       setIsGenerating(false)
       return
     }
@@ -452,7 +452,7 @@ export default function PlayoffsClient({ userId }: Props) {
     })
 
     if (parseError) {
-      setMsg({ type: 'error', text: 'Ocurrió un error interpretando los orígenes y conexiones de llave.' })
+      toast('Ocurrió un error interpretando los orígenes y conexiones de llave.', 'error')
       setIsGenerating(false)
       return
     }
@@ -479,12 +479,9 @@ export default function PlayoffsClient({ userId }: Props) {
     // INSERT atómico
     const { error } = await supabase.from('partidos').insert(partidosInsert)
     if (error) {
-      setMsg({ type: 'error', text: 'Error al generar la llave completa: ' + error.message })
+      toast('Error al generar la llave completa: ' + error.message, 'error')
     } else {
-      setMsg({
-        type: 'success',
-        text: `✅ Llave generada completamente (${partidosInsert.length} partidos totales).`,
-      })
+      toast(`Llave generada completamente (${partidosInsert.length} partidos totales).`)
       setPlayoffsYaGenerados(true)
       setPendingCount(0)
     }
@@ -529,16 +526,16 @@ export default function PlayoffsClient({ userId }: Props) {
           </p>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <select value={torneoActivo} onChange={(e) => setTorneoActivo(e.target.value)} className="select-field py-1.5 h-10">
+          <select value={torneoActivo} onChange={(e) => setTorneoActivo(e.target.value)} className="select-field py-1.5 h-10" aria-label="Torneo activo">
             {torneos.length === 0
               ? <option value="">Sin torneos activos</option>
               : torneos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)
             }
           </select>
-          <select value={categoriaActiva} onChange={(e) => setCategoriaActiva(e.target.value)} className="select-field py-1.5 h-10">
+          <select value={categoriaActiva} onChange={(e) => setCategoriaActiva(e.target.value)} className="select-field py-1.5 h-10" aria-label="Categoría activa">
             {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
-          <select value={faseActiva} onChange={(e) => setFaseActiva(e.target.value)} className="select-field py-1.5 h-10">
+          <select value={faseActiva} onChange={(e) => setFaseActiva(e.target.value)} className="select-field py-1.5 h-10" aria-label="Fase a configurar">
             {FASES_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </div>
@@ -549,30 +546,15 @@ export default function PlayoffsClient({ userId }: Props) {
           <p>No tenés torneos activos. Activá uno desde "Mis Torneos".</p>
         </div>
       ) : loading ? (
-        <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-500" /></div>
+        <div className="grid lg:grid-cols-[1fr_400px] gap-6 items-start">
+          <div className="space-y-4">
+            <SkeletonPanel lines={5} />
+            <SkeletonPanel lines={3} />
+          </div>
+          <SkeletonPanel lines={4} />
+        </div>
       ) : (
         <>
-          <AnimatePresence>
-            {msg && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className={`flex items-start gap-3 p-4 rounded-xl border text-sm ${
-                  msg.type === 'error'
-                    ? 'bg-red-500/10 border-red-500/30 text-red-300'
-                    : 'bg-green-500/10 border-green-500/30 text-green-300'
-                }`}
-              >
-                {msg.type === 'error'
-                  ? <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                  : <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
-                }
-                <p>{msg.text}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           <div className="grid lg:grid-cols-[1fr_400px] gap-6 items-start">
 
             {/* COLUMNA IZQUIERDA: Configurador + Panel de estado */}

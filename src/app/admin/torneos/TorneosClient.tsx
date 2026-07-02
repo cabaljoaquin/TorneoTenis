@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
 import {
   Trophy, Plus, Calendar, MapPin, Loader2, CheckCircle2, Circle,
-  Pencil, Eye, EyeOff, X, Save, CheckCheck, ExternalLink
+  Pencil, Eye, EyeOff, X, Save, ExternalLink
 } from 'lucide-react'
 
 interface Torneo {
@@ -52,44 +53,11 @@ interface Props {
   userId: string
 }
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
-type ToastType = 'success' | 'error'
-interface Toast { id: number; msg: string; type: ToastType }
-
-function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const push = useCallback((msg: string, type: ToastType = 'success') => {
-    const id = Date.now()
-    setToasts(prev => [...prev, { id, msg, type }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
-  }, [])
-  return { toasts, push }
-}
-
-function ToastContainer({ toasts }: { toasts: Toast[] }) {
-  return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
-      {toasts.map(t => (
-        <div
-          key={t.id}
-          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold shadow-xl animate-slide-in border ${t.type === 'success'
-              ? 'bg-brand-600/90 border-brand-500/50 text-white'
-              : 'bg-red-600/90 border-red-500/50 text-white'
-            }`}
-        >
-          {t.type === 'success' ? <CheckCheck size={15} /> : <X size={15} />}
-          {t.msg}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function TorneosClient({ torneos: initialTorneos, userId }: Props) {
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
-  const { toasts, push } = useToast()
+  const { toast: push } = useFeedback()
 
   const [torneos, setTorneos] = useState<Torneo[]>(initialTorneos)
 
@@ -221,8 +189,6 @@ export default function TorneosClient({ torneos: initialTorneos, userId }: Props
 
   return (
     <>
-      <ToastContainer toasts={toasts} />
-
       <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">

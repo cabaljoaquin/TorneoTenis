@@ -4,6 +4,9 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, UserPlus, Search, Loader2, AlertCircle, Users, UserPlus2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
+import { SkeletonPlayerCard } from '@/components/ui/Skeletons'
+import { loadPref, savePref } from '@/utils/adminPrefs'
 
 interface Props {
   userId: string
@@ -11,6 +14,7 @@ interface Props {
 
 export default function InscripcionesClient({ userId }: Props) {
   const supabase = useMemo(() => createClient(), [])
+  const { toast, confirm } = useFeedback()
 
   const [torneos, setTorneos] = useState<any[]>([])
   const [categorias, setCategorias] = useState<any[]>([])
@@ -62,19 +66,30 @@ export default function InscripcionesClient({ userId }: Props) {
           return new Date(b.fecha_inicio).getTime() - new Date(a.fecha_inicio).getTime()
         })
         setTorneos(resT)
-        if (resT.length > 0) setTorneoActivoId(resT[0].id)
+        const storedTorneo = loadPref('torneo')
+        setTorneoActivoId(resT.find(t => t.id === storedTorneo)?.id ?? resT[0].id)
       }
       if (resC) {
         setCategorias(resC)
-        if (resC.length > 0) setCategoriaId(resC[0].id)
+        if (resC.length > 0) {
+          const storedCat = loadPref('categoria')
+          setCategoriaId(resC.find((c: any) => c.id === storedCat)?.id ?? resC[0].id)
+        }
       }
     }
     initData()
   }, [userId])
 
   useEffect(() => {
-    if (torneoActivoId) fetchInscriptos(torneoActivoId)
+    if (torneoActivoId) {
+      fetchInscriptos(torneoActivoId)
+      savePref('torneo', torneoActivoId)
+    }
   }, [torneoActivoId])
+
+  useEffect(() => {
+    if (categoriaId) savePref('categoria', categoriaId)
+  }, [categoriaId])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -235,7 +250,35 @@ export default function InscripcionesClient({ userId }: Props) {
   }
 
   const handleRemoveInscripcion = async (id: string, participanteId: string, nombre: string) => {
-    if (!confirm(`¿Seguro querés dar de baja a ${nombre} de este torneo?`)) return
+    // Medir consecuencias reales antes de preguntar
+    const [{ count: totalPartidos }, { count: jugados }] = await Promise.all([
+      supabase.from('partidos').select('id', { count: 'exact', head: true })
+        .eq('torneo_id', torneoActivoId)
+        .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`),
+      supabase.from('partidos').select('id', { count: 'exact', head: true })
+        .eq('torneo_id', torneoActivoId)
+        .eq('estado', 'finalizado')
+        .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`),
+    ])
+
+    const nTotal = totalPartidos ?? 0
+    const nJugados = jugados ?? 0
+    let detalle = 'No tiene partidos asociados en este torneo.'
+    if (nTotal > 0) {
+      detalle = `Se eliminarán ${nTotal} partido${nTotal !== 1 ? 's' : ''}`
+      detalle += nJugados > 0
+        ? `, ${nJugados} ya jugado${nJugados !== 1 ? 's' : ''} (esto modifica las tablas de posiciones).`
+        : ' pendientes.'
+    }
+
+    const ok = await confirm({
+      title: `¿Dar de baja a ${nombre}?`,
+      message: detalle,
+      confirmLabel: 'Dar de baja',
+      danger: true,
+    })
+    if (!ok) return
+
     // Optimistic remove
     setInscriptos(prev => prev.filter(i => i.id !== id))
     await supabase.from('partidos').delete()
@@ -243,9 +286,11 @@ export default function InscripcionesClient({ userId }: Props) {
       .eq('torneo_id', torneoActivoId)
     const { error } = await supabase.from('inscripciones').delete().eq('id', id)
     if (error) {
-      alert('Error al dar de baja: ' + error.message)
+      toast('Error al dar de baja: ' + error.message, 'error')
       // Revert on error
       fetchInscriptos(torneoActivoId, false)
+    } else {
+      toast(`${nombre} dado de baja del torneo.`)
     }
   }
 
@@ -473,7 +518,11 @@ export default function InscripcionesClient({ userId }: Props) {
               : inscriptos;
 
             if (loadingList) {
-              return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-500" /></div>
+              return (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {[0, 1, 2, 3, 4, 5].map(i => <SkeletonPlayerCard key={i} />)}
+                </div>
+              )
             }
 
             if (listFiltered.length === 0) {

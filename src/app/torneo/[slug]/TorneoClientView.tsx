@@ -8,6 +8,7 @@ import { Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import confetti from 'canvas-confetti'
 import { createClient } from '@/utils/supabase/client'
 import { calculateStandings } from '@/utils/standingsCalculator'
+import { Sk, SkeletonZoneCard } from '@/components/ui/Skeletons'
 import { Activity, Calendar, Trophy } from 'lucide-react'
 
 // Utilidad para ordenar jerárquicamente las fases
@@ -331,19 +332,19 @@ function ShimmerBar() {
   )
 }
 
-function PulseDots() {
+// Esqueleto de la vista pública: tabs de categorías + tarjetas de zona
+function ContentSkeleton() {
   return (
-    <div className="flex items-center justify-center gap-2 py-16">
-      {[0, 1, 2].map(i => (
-        <span
-          key={i}
-          className="w-2 h-2 rounded-full bg-brand-500"
-          style={{
-            animation: 'dot-bounce 1.2s ease-in-out infinite',
-            animationDelay: `${i * 0.2}s`,
-          }}
-        />
-      ))}
+    <div className="w-full max-w-5xl mx-auto py-8 px-4 space-y-8">
+      <div className="flex gap-2">
+        {[72, 96, 84].map((w, i) => (
+          <Sk key={i} style={{ width: w }} className="h-9 rounded-full" />
+        ))}
+      </div>
+      <div className="grid md:grid-cols-2 gap-8">
+        <SkeletonZoneCard />
+        <SkeletonZoneCard />
+      </div>
     </div>
   )
 }
@@ -582,7 +583,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
     return (
       <>
         <ShimmerBar />
-        <PulseDots />
+        <ContentSkeleton />
       </>
     )
   }
@@ -664,7 +665,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                           {(() => { const st = sets.find((s: any) => s.isSuper); return st ? <span className="w-6 text-center flex-shrink-0">{st.s2}</span> : null })()}
                         </div>
                       </div>
-                      <span className="text-[10px] text-slate-600 font-semibold mt-2">{m.categorias?.nombre}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold mt-2">{m.categorias?.nombre}</span>
                     </div>
                     {idx < recentMatches.length - 1 && (
                       <div className="w-px self-stretch my-2 mx-1 bg-gradient-to-b from-transparent via-surface-border to-transparent" />
@@ -689,7 +690,10 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
       <div className="mt-6 px-4 min-h-[480px]">
         {(loading || isPending) && <ShimmerBar />}
         {(loading || isPending) ? (
-          <PulseDots />
+          <div className="w-full grid md:grid-cols-2 gap-8">
+            <SkeletonZoneCard />
+            <SkeletonZoneCard />
+          </div>
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -788,14 +792,14 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
                                         </span>
                                       ) : (
                                         <>
-                                          <span className="text-[9px] uppercase font-bold text-amber-500/80 bg-amber-500/10 px-1.5 py-0.5 rounded">Pendiente</span>
+                                          <span className="text-[10px] uppercase font-bold text-amber-500/90 bg-amber-500/10 px-1.5 py-0.5 rounded">Pendiente</span>
                                           {m.fecha_hora && (
-                                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                            <span className="text-[11px] text-slate-400 flex items-center gap-1">
                                               🕐 {new Date(m.fecha_hora).toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                             </span>
                                           )}
                                           {m.sedes?.nombre && (
-                                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                            <span className="text-[11px] text-slate-400 flex items-center gap-1">
                                               📍 {m.sedes.nombre}
                                             </span>
                                           )}
@@ -823,7 +827,7 @@ function TorneoContent({ torneoId }: { torneoId: string }) {
 
 export default function TorneoClientView({ torneoId }: { torneoId: string }) {
   return (
-    <Suspense fallback={<><ShimmerBar /><PulseDots /></>}>
+    <Suspense fallback={<><ShimmerBar /><ContentSkeleton /></>}>
       <TorneoContent torneoId={torneoId} />
     </Suspense>
   )

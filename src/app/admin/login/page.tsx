@@ -136,7 +136,7 @@ export default function AdminLoginPage() {
           </p>
         </div>
 
-        <p className="text-center text-xs text-slate-700 mt-6">
+        <p className="text-center text-xs text-slate-500 mt-6">
           TorneoTenis © 2026 — Plataforma de torneos amateur
         </p>
       </div>

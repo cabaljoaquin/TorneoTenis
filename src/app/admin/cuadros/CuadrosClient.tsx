@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Users, Loader2, Calendar, AlertCircle, Zap, CheckCircle2, Swords, Trash2, Edit2, GitBranch } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
+import { SkeletonPanel, SkeletonZoneCard } from '@/components/ui/Skeletons'
+import { loadPref, savePref } from '@/utils/adminPrefs'
 
 interface Props {
   userId: string
@@ -32,7 +35,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
   const [isSavingMatch, setIsSavingMatch] = useState(false)
   const [playoffsGenerados, setPlayoffsGenerados] = useState(false)
   const [isGeneratingCruces, setIsGeneratingCruces] = useState(false)
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const { toast: showToast, confirm } = useFeedback()
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   // Recuerda la última sede usada manualmente para pre-cargarla en el siguiente partido
   const lastUsedSedeId = useRef<string>('')
@@ -61,7 +64,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
 
       if (ts && ts.length > 0) {
         setTorneos(ts)
-        setTorneoActivo(ts[0].id)
+        const stored = loadPref('torneo')
+        setTorneoActivo(ts.find(t => t.id === stored)?.id ?? ts[0].id)
       } else {
         setTorneos([])
         setLoading(false)
@@ -95,7 +99,8 @@ export default function CuadrosWorkspace({ userId }: Props) {
 
       if (cs && cs.length > 0) {
         setCategorias(cs)
-        setCategoriaActiva(cs[0].id)
+        const stored = loadPref('categoria')
+        setCategoriaActiva(cs.find(c => c.id === stored)?.id ?? cs[0].id)
       } else {
         setCategorias([])
         setCategoriaActiva('')
@@ -103,6 +108,14 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
     loadCategorias()
   }, [torneoActivo])
+
+  useEffect(() => {
+    if (torneoActivo) savePref('torneo', torneoActivo)
+  }, [torneoActivo])
+
+  useEffect(() => {
+    if (categoriaActiva) savePref('categoria', categoriaActiva)
+  }, [categoriaActiva])
 
   useEffect(() => {
     if (torneoActivo && categoriaActiva) loadWorkspace(torneoActivo, categoriaActiva)
@@ -204,7 +217,7 @@ export default function CuadrosWorkspace({ userId }: Props) {
       .single()
 
     if (error) {
-      alert('Error asignando jugador: ' + error.message)
+      showToast('Error asignando jugador: ' + error.message, 'error')
       // Rollback
       setParticipantesZonificados(prev => prev.filter(pz => pz.id !== tempId))
     } else if (data) {
@@ -225,12 +238,12 @@ export default function CuadrosWorkspace({ userId }: Props) {
       .or(`participante_1_id.eq.${participanteId},participante_2_id.eq.${participanteId}`)
     const { error } = await supabase.from('participantes_zonas').delete().match({ zona_id: zonaId, participante_id: participanteId })
 
-    if (error) alert('Error quitando jugador: ' + error.message)
+    if (error) showToast('Error quitando jugador: ' + error.message, 'error')
   }
 
   const handleCreateMatch = async () => {
-    if (!matchForm.p1 || !matchForm.p2) return alert('Seleccioná los 2 jugadores.')
-    if (matchForm.p1 === matchForm.p2) return alert('El jugador 1 y el jugador 2 no pueden ser el mismo.')
+    if (!matchForm.p1 || !matchForm.p2) return showToast('Seleccioná los 2 jugadores.', 'error')
+    if (matchForm.p1 === matchForm.p2) return showToast('El jugador 1 y el jugador 2 no pueden ser el mismo.', 'error')
     setIsSavingMatch(true)
     const payload = {
       torneo_id: torneoActivo,
@@ -245,10 +258,12 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
     if (matchForm.id) {
       const { error } = await supabase.from('partidos').update(payload).eq('id', matchForm.id)
-      if (error) alert('Error al editar partido: ' + error.message)
+      if (error) showToast('Error al editar partido: ' + error.message, 'error')
+      else showToast('Partido actualizado.')
     } else {
       const { error } = await supabase.from('partidos').insert(payload)
-      if (error) alert('Error al programar partido: ' + error.message)
+      if (error) showToast('Error al programar partido: ' + error.message, 'error')
+      else showToast('Partido programado.')
     }
     if (matchForm.sedeId) lastUsedSedeId.current = matchForm.sedeId
     setMatchForm({ id: '', p1: '', p2: '', fechaHora: '', sedeId: defaultSedeId, fase: 'Fase de Grupos' })
@@ -259,22 +274,21 @@ export default function CuadrosWorkspace({ userId }: Props) {
   }
 
   const handleRemoveMatch = async (matchId: string) => {
-    if (!confirm('¿Eliminar este partido de la zona?')) return
+    const ok = await confirm({
+      title: '¿Eliminar este partido?',
+      message: 'El partido se quitará de la zona. Esta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar',
+      danger: true,
+    })
+    if (!ok) return
     // Optimistic match removal
     setPartidosZona(prev => prev.filter(p => p.id !== matchId))
     const { error } = await supabase.from('partidos').delete().eq('id', matchId)
     if (error) {
-      alert('Error borrando partido: ' + error.message)
+      showToast('Error borrando partido: ' + error.message, 'error')
       loadWorkspace(torneoActivo, categoriaActiva, false)
     }
   }
-
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    setToast({ msg, type })
-    toastTimerRef.current = setTimeout(() => setToast(null), 4000)
-  }, [])
 
   const handleGenerarCruces = async () => {
     if (zonas.length === 0) return showToast('No hay zonas creadas para generar cruces.', 'error')
@@ -475,7 +489,13 @@ export default function CuadrosWorkspace({ userId }: Props) {
     }
 
     const handleDeleteKnockoutMatch = async (id: string) => {
-      if (!confirm('¿Estás seguro de eliminar este partido programado? Esto puede desenlazar fases previas.')) return
+      const ok = await confirm({
+        title: '¿Eliminar este partido programado?',
+        message: 'Los partidos de fases previas que apuntaban a este quedarán desenlazados del cuadro.',
+        confirmLabel: 'Eliminar',
+        danger: true,
+      })
+      if (!ok) return
 
       setKnockoutMatches(prev => prev.filter(m => m.id !== id))
 
@@ -612,13 +632,13 @@ export default function CuadrosWorkspace({ userId }: Props) {
             )}
           </div>
           <div className="flex flex-wrap gap-3">
-            <select value={torneoActivo} onChange={e => setTorneoActivo(e.target.value)} className="select-field py-1.5 h-10">
+            <select value={torneoActivo} onChange={e => setTorneoActivo(e.target.value)} className="select-field py-1.5 h-10" aria-label="Torneo activo">
               {torneos.length === 0
                 ? <option value="">Sin torneos activos</option>
                 : torneos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)
               }
             </select>
-            <select value={categoriaActiva} onChange={e => setCategoriaActiva(e.target.value)} className="select-field py-1.5 h-10">
+            <select value={categoriaActiva} onChange={e => setCategoriaActiva(e.target.value)} className="select-field py-1.5 h-10" aria-label="Categoría activa">
               {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
             {torneoFormato === 'grupos' && !playoffsGenerados && zonas.length > 0 && (
@@ -646,7 +666,14 @@ export default function CuadrosWorkspace({ userId }: Props) {
             <p>No tenés torneos activos. Activá uno desde "Mis Torneos".</p>
           </div>
         ) : loading ? (
-          <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-500" /></div>
+          <div className="grid lg:grid-cols-[300px_1fr] gap-6">
+            <SkeletonPanel lines={6} />
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <SkeletonZoneCard />
+              <SkeletonZoneCard />
+              <SkeletonZoneCard />
+            </div>
+          </div>
         ) : torneoFormato === 'eliminatoria' ? (
           <KnockoutMatchmaker
             inscripciones={inscripciones}
@@ -938,28 +965,6 @@ export default function CuadrosWorkspace({ userId }: Props) {
           )}
         </AnimatePresence>
 
-        {/* TOAST */}
-        <AnimatePresence>
-          {toast && (
-            <motion.div
-              key="toast"
-              initial={{ opacity: 0, y: 24, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.95 }}
-              className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl border text-sm font-medium
-              ${toast.type === 'success'
-                  ? 'bg-surface border-green-500/30 text-green-300'
-                  : 'bg-surface border-red-500/30 text-red-300'
-                }`}
-            >
-              {toast.type === 'success'
-                ? <CheckCircle2 size={18} className="text-green-400 shrink-0" />
-                : <AlertCircle size={18} className="text-red-400 shrink-0" />
-              }
-              {toast.msg}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     )
   }

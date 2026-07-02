@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
 import { createClient } from '@/utils/supabase/server'
 import { TorneosGrid, HeroText } from './TorneosGrid'
 
@@ -31,9 +32,13 @@ export default async function PublicHomePage() {
       {/* === HERO SECTION === */}
       <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
         {/* Imagen de fondo */}
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?q=80&w=1920&auto=format&fit=crop')" }}
+        <Image
+          src="/hero-tennis.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
         />
         {/* Overlay gradiente */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-surface" />
@@ -61,12 +66,12 @@ export default async function PublicHomePage() {
       {/* === FOOTER CTA === */}
       <footer className="border-t border-white/5 py-8 px-4">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-slate-700">TorneoTenis © 2026 — Plataforma de torneos amateur</p>
+          <p className="text-xs text-slate-500">TorneoTenis © 2026 — Plataforma de torneos amateur</p>
           <a
             href="https://wa.me/5493564516387"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-600 hover:text-brand-400 transition-colors duration-200 underline underline-offset-4 decoration-slate-700 hover:decoration-brand-500"
+            className="text-xs text-slate-400 hover:text-brand-400 transition-colors duration-200 underline underline-offset-4 decoration-slate-600 hover:decoration-brand-500"
           >
             ¿Querés administrar tu torneo?
           </a>

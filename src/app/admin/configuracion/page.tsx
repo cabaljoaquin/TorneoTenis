@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { CheckCircle2, AlertCircle, Loader2, Star, MapPin, Tag } from 'lucide-react'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
+import { SkeletonChips } from '@/components/ui/Skeletons'
+import { Loader2, Star, MapPin, Tag } from 'lucide-react'
 
 interface Sede {
   id: string
@@ -24,18 +26,19 @@ const genderConfig: Record<string, { label: string; className: string }> = {
 
 export default function ConfiguracionPage() {
   const supabase = createClient()
+  const { toast } = useFeedback()
 
   // ── Sedes ──────────────────────────────────────────────────────────────────
   const [sedeName, setSedeName]       = useState('')
   const [esPrincipal, setEsPrincipal] = useState(false)
-  const [sedeStatus, setSedeStatus]   = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; msg?: string }>({ type: 'idle' })
+  const [sedeSaving, setSedeSaving]   = useState(false)
   const [sedes, setSedes]             = useState<Sede[]>([])
   const [sedesLoading, setSedesLoading] = useState(true)
 
   // ── Categorías ─────────────────────────────────────────────────────────────
   const [catName, setCatName]       = useState('')
   const [catGender, setCatGender]   = useState('Mixto')
-  const [catStatus, setCatStatus]   = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; msg?: string }>({ type: 'idle' })
+  const [catSaving, setCatSaving]   = useState(false)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [catsLoading, setCatsLoading] = useState(true)
 
@@ -62,45 +65,32 @@ export default function ConfiguracionPage() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleSedeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSedeStatus({ type: 'loading' })
+    setSedeSaving(true)
     const { error } = await supabase.from('sedes').insert({ nombre: sedeName, es_principal: esPrincipal })
     if (error) {
-      setSedeStatus({ type: 'error', msg: error.message })
+      toast('Error guardando la sede: ' + error.message, 'error')
     } else {
-      setSedeStatus({ type: 'success', msg: 'Sede guardada' })
+      toast('Sede guardada.')
       setSedeName('')
       setEsPrincipal(false)
       await fetchSedes()
-      setTimeout(() => setSedeStatus({ type: 'idle' }), 3000)
     }
+    setSedeSaving(false)
   }
 
   const handleCatSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setCatStatus({ type: 'loading' })
+    setCatSaving(true)
     const { error } = await supabase.from('categorias').insert({ nombre: catName, genero: catGender })
     if (error) {
-      setCatStatus({ type: 'error', msg: error.message })
+      toast('Error guardando la categoría: ' + error.message, 'error')
     } else {
-      setCatStatus({ type: 'success', msg: 'Categoría guardada' })
+      toast('Categoría guardada.')
       setCatName('')
       await fetchCategorias()
-      setTimeout(() => setCatStatus({ type: 'idle' }), 3000)
     }
+    setCatSaving(false)
   }
-
-  // ── Skeleton ───────────────────────────────────────────────────────────────
-  const SkeletonChips = () => (
-    <div className="flex flex-wrap gap-2">
-      {[80, 110, 70, 95].map(w => (
-        <div
-          key={w}
-          style={{ width: w }}
-          className="h-7 rounded-full bg-slate-700/50 animate-pulse"
-        />
-      ))}
-    </div>
-  )
 
   return (
     <div className="space-y-8 animate-fade-in max-w-2xl">
@@ -140,15 +130,9 @@ export default function ConfiguracionPage() {
                 />
                 <span className="text-sm text-slate-300">Es sede principal</span>
               </label>
-              <button disabled={sedeStatus.type === 'loading'} type="submit" className="btn-primary w-full mt-2">
-                {sedeStatus.type === 'loading' ? <Loader2 className="animate-spin" size={16} /> : 'Guardar Sede'}
+              <button disabled={sedeSaving} type="submit" className="btn-primary w-full mt-2">
+                {sedeSaving ? <Loader2 className="animate-spin" size={16} /> : 'Guardar Sede'}
               </button>
-              {sedeStatus.msg && (
-                <p className={`text-xs mt-2 flex items-center gap-1 ${sedeStatus.type === 'error' ? 'text-red-400' : 'text-brand-400'}`}>
-                  {sedeStatus.type === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
-                  {sedeStatus.msg}
-                </p>
-              )}
             </form>
           </div>
 
@@ -211,15 +195,9 @@ export default function ConfiguracionPage() {
                   <option>Mixto</option>
                 </select>
               </div>
-              <button disabled={catStatus.type === 'loading'} type="submit" className="btn-primary w-full mt-2">
-                {catStatus.type === 'loading' ? <Loader2 className="animate-spin" size={16} /> : 'Guardar Categoría'}
+              <button disabled={catSaving} type="submit" className="btn-primary w-full mt-2">
+                {catSaving ? <Loader2 className="animate-spin" size={16} /> : 'Guardar Categoría'}
               </button>
-              {catStatus.msg && (
-                <p className={`text-xs mt-2 flex items-center gap-1 ${catStatus.type === 'error' ? 'text-red-400' : 'text-brand-400'}`}>
-                  {catStatus.type === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
-                  {catStatus.msg}
-                </p>
-              )}
             </form>
           </div>
 

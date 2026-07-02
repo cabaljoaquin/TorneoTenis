@@ -3,8 +3,11 @@
 import { motion, Variants, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, Clock, Trophy, Loader2, Search, MapPin, Pencil, X, Save } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
-import { parseTennisScore } from '@/utils/scoreParser'
+import { parseTennisScore, parseSuperTiebreak } from '@/utils/scoreParser'
 import { createClient } from '@/utils/supabase/client'
+import { useFeedback } from '@/components/ui/FeedbackProvider'
+import { SkeletonMatchCard } from '@/components/ui/Skeletons'
+import { loadPref, savePref } from '@/utils/adminPrefs'
 
 interface Props {
   userId: string
@@ -22,6 +25,7 @@ const itemVariants: Variants = {
 
 export default function PartidosClient({ userId }: Props) {
   const supabase = useMemo(() => createClient(), [])
+  const { toast } = useFeedback()
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null)
@@ -57,6 +61,9 @@ export default function PartidosClient({ userId }: Props) {
       const items = data ?? []
       setTorneos(items)
       setTorneosIds(items.map(t => t.id))
+      // Restaurar el torneo seleccionado en otras secciones del panel
+      const stored = loadPref('torneo')
+      if (stored && items.some(t => t.id === stored)) setFilterTorneo(stored)
     }
 
     async function loadSedes() {
@@ -173,44 +180,18 @@ export default function PartidosClient({ userId }: Props) {
   const handleScoreSubmit = async (id: string) => {
     const scoreStr = inputs[id]
     const winnerId = selectedWinners[id]
-    if (!winnerId) return alert('Debes seleccionar al ganador del partido primero.')
-    if (!scoreStr) return alert('Debes ingresar el resultado numérico (Ej: 6475).')
+    if (!winnerId) return toast('Seleccioná al ganador del partido primero.', 'error')
+    if (!scoreStr) return toast('Ingresá el resultado numérico (Ej: 6475).', 'error')
     const parsedSets = parseTennisScore(scoreStr)
-    if (parsedSets.length === 0) return alert('Formato de resultado inválido.')
+    if (parsedSets.length === 0) return toast('Formato de resultado inválido.', 'error')
 
     const stStr = stInputs[id]?.trim()
     if (stStr) {
-      let stP1: number | null = null
-      let stP2: number | null = null
-
-      if (stStr.includes('-')) {
-        const parts = stStr.split('-')
-        stP1 = parseInt(parts[0], 10)
-        stP2 = parseInt(parts[1], 10)
-      } else if (stStr.includes(' ')) {
-        const parts = stStr.split(' ')
-        stP1 = parseInt(parts[0], 10)
-        stP2 = parseInt(parts[1], 10)
-      } else if (stStr.length >= 2) {
-        const digits = stStr.replace(/\D/g, '')
-        if (digits.length === 3) {
-          if (parseInt(digits.slice(0, 2), 10) >= 10) {
-            stP1 = parseInt(digits.slice(0, 2), 10)
-            stP2 = parseInt(digits.slice(2), 10)
-          } else {
-            stP1 = parseInt(digits.slice(0, 1), 10)
-            stP2 = parseInt(digits.slice(1), 10)
-          }
-        } else if (digits.length === 4) {
-          stP1 = parseInt(digits.slice(0, 2), 10)
-          stP2 = parseInt(digits.slice(2), 10)
-        }
-      }
-
-      if (stP1 !== null && stP2 !== null && !isNaN(stP1) && !isNaN(stP2)) {
-        parsedSets.push({ p1: stP1, p2: stP2, isSuper: true })
+      const stb = parseSuperTiebreak(stStr)
+      if (stb) {
+        parsedSets.push({ p1: stb.p1, p2: stb.p2, isSuper: true })
       } else {
-        return alert('Formato de Super Tiebreak inválido. Usá el formato 10-8 ó 10 8.')
+        return toast('Formato de Super Tiebreak inválido. Usá el formato 10-8 ó 10 8.', 'error')
       }
     }
 
@@ -238,7 +219,7 @@ export default function PartidosClient({ userId }: Props) {
       .eq('id', id)
 
     if (error) {
-      alert('Error guardando partido: ' + error.message)
+      toast('Error guardando partido: ' + error.message, 'error')
       setSavingMatchId(null)
       return
     }
@@ -251,10 +232,11 @@ export default function PartidosClient({ userId }: Props) {
         .eq('id', currentMatch.siguiente_partido_id)
       if (errSiguiente) {
         console.error('Error auto-progresión:', errSiguiente)
-        alert('Se guardó el resultado pero hubo un error actualizando la fase siguiente.')
+        toast('Se guardó el resultado pero hubo un error actualizando la fase siguiente.', 'error')
       }
     }
 
+    toast('Resultado guardado.')
     setSelectedWinners(prev => { const n = { ...prev }; delete n[id]; return n })
     setInputs(prev => { const n = { ...prev }; delete n[id]; return n })
     setStInputs(prev => { const n = { ...prev }; delete n[id]; return n })
@@ -313,15 +295,23 @@ export default function PartidosClient({ userId }: Props) {
 
       <div className="flex flex-col gap-4 mb-4">
         <div className="flex flex-col sm:flex-row gap-4">
-          <select value={filterTorneo} onChange={e => setFilterTorneo(e.target.value)} className="select-field">
+          <select
+            value={filterTorneo}
+            onChange={e => {
+              setFilterTorneo(e.target.value)
+              if (e.target.value !== 'all') savePref('torneo', e.target.value)
+            }}
+            className="select-field"
+            aria-label="Filtrar por torneo"
+          >
             <option value="all">Todos los Torneos</option>
             {torneos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
           </select>
-          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field">
+          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="select-field" aria-label="Filtrar por categoría">
             <option value="all">Todas las Categorías</option>
             {availableCategories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
-          <select value={filterFase} onChange={e => setFilterFase(e.target.value)} className="select-field">
+          <select value={filterFase} onChange={e => setFilterFase(e.target.value)} className="select-field" aria-label="Filtrar por fase">
             <option value="all">Todas las Fases</option>
             <option value="grupos">Fase de Grupos</option>
             <option value="eliminatorias">Eliminatorias</option>
@@ -340,7 +330,9 @@ export default function PartidosClient({ userId }: Props) {
       </div>
 
       {loading && matches.length === 0 ? (
-        <div className="flex justify-center p-8"><Loader2 className="animate-spin text-brand-500" /></div>
+        <div className="grid gap-4">
+          {[0, 1, 2].map(i => <SkeletonMatchCard key={i} />)}
+        </div>
       ) : filteredMatches.length === 0 ? (
         <p className="text-slate-500 text-center py-8">
           {torneosIds.length === 0 ? 'No tenés torneos registrados.' : 'No hay partidos en esta vista o que coincidan con la búsqueda.'}
@@ -496,6 +488,43 @@ export default function PartidosClient({ userId }: Props) {
                         {savingMatchId === match.id ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
                       </button>
                     </div>
+
+                    {/* Preview en vivo del resultado parseado */}
+                    {(() => {
+                      const raw = (inputs[match.id] || '').trim()
+                      const stRaw = (stInputs[match.id] || '').trim()
+                      if (!raw && !stRaw) return null
+
+                      const sets = raw ? parseTennisScore(raw) : []
+                      const stb = stRaw ? parseSuperTiebreak(stRaw) : null
+                      const invalido = (raw !== '' && sets.length === 0) || (stRaw !== '' && !stb)
+                      const winnerName = isP1Winner ? match.p1?.nombre_mostrado : isP2Winner ? match.p2?.nombre_mostrado : null
+
+                      return (
+                        <div className="flex items-center gap-2 flex-wrap self-center md:self-end min-h-[22px]">
+                          {invalido ? (
+                            <span className="text-[11px] text-amber-400 font-medium">Formato no reconocido todavía…</span>
+                          ) : (
+                            <>
+                              <span className="text-[11px] text-slate-500">Se guardará:</span>
+                              {sets.map((s: any, i: number) => (
+                                <span key={i} className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-surface border border-surface-border text-slate-300">
+                                  {s.p1}-{s.p2}{s.tb1 !== undefined ? ` (${s.tb1}-${s.tb2})` : ''}
+                                </span>
+                              ))}
+                              {stb && (
+                                <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                                  STB {stb.p1}-{stb.p2}
+                                </span>
+                              )}
+                              {winnerName && (sets.length > 0 || stb) && (
+                                <span className="text-[11px] text-brand-400 font-semibold">→ Gana {winnerName}</span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               </motion.div>

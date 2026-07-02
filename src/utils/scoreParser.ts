@@ -1,3 +1,40 @@
+// Interpreta el input del super tiebreak: "10-8", "10 8", "108" o "1012".
+// Devuelve null si el formato no es reconocible.
+export function parseSuperTiebreak(input: string): { p1: number; p2: number } | null {
+  const str = input.trim()
+  if (!str) return null
+
+  let p1: number | null = null
+  let p2: number | null = null
+
+  if (str.includes('-')) {
+    const parts = str.split('-')
+    p1 = parseInt(parts[0], 10)
+    p2 = parseInt(parts[1], 10)
+  } else if (str.includes(' ')) {
+    const parts = str.split(' ')
+    p1 = parseInt(parts[0], 10)
+    p2 = parseInt(parts[1], 10)
+  } else if (str.length >= 2) {
+    const digits = str.replace(/\D/g, '')
+    if (digits.length === 3) {
+      if (parseInt(digits.slice(0, 2), 10) >= 10) {
+        p1 = parseInt(digits.slice(0, 2), 10)
+        p2 = parseInt(digits.slice(2), 10)
+      } else {
+        p1 = parseInt(digits.slice(0, 1), 10)
+        p2 = parseInt(digits.slice(1), 10)
+      }
+    } else if (digits.length === 4) {
+      p1 = parseInt(digits.slice(0, 2), 10)
+      p2 = parseInt(digits.slice(2), 10)
+    }
+  }
+
+  if (p1 === null || p2 === null || isNaN(p1) || isNaN(p2)) return null
+  return { p1, p2 }
+}
+
 export function parseTennisScore(input: string): any[] {
   const str = input.replace(/\D/g, '')
   if (str.length === 0) return []

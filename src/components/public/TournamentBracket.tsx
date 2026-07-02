@@ -45,6 +45,7 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
   }
 
   return (
+    <div className="relative">
     <motion.div
       variants={containerVariants}
       initial="hidden"
@@ -78,7 +79,7 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
                 )}
                 {match.isPlaceholder && (
                   <div className="px-3 pt-1.5 pb-0">
-                    <span className="text-[9px] uppercase font-bold tracking-widest text-amber-500/70">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-amber-500/80">
                       Por confirmar
                     </span>
                   </div>
@@ -150,15 +151,15 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
                     {match.fechaHora && (() => {
                       const { day, time } = formatMatchDate(match.fechaHora)
                       return (
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
-                          <Clock size={9} className="text-slate-500 shrink-0" />
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                          <Clock size={10} className="text-slate-500 shrink-0" />
                           {day} · {time}
                         </span>
                       )
                     })()}
                     {match.sede && (
-                      <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium truncate">
-                        <MapPin size={9} className="text-slate-500 shrink-0" />
+                      <span className="flex items-center gap-1 text-[11px] text-slate-400 font-medium truncate">
+                        <MapPin size={10} className="text-slate-500 shrink-0" />
                         {match.sede}
                       </span>
                     )}
@@ -178,5 +179,13 @@ export default function TournamentBracket({ rounds }: { rounds: Round[] }) {
         </motion.div>
       ))}
     </motion.div>
+    {/* Indicadores de desborde: sugieren que hay más rondas fuera de vista */}
+    {rounds.length > 1 && (
+      <>
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-surface/90 to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-surface/90 to-transparent" />
+      </>
+    )}
+    </div>
   )
 }
